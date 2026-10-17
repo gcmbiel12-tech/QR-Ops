@@ -1,3 +1,4 @@
+
 name: Build and deploy QR Ops Web
 
 on:
@@ -18,31 +19,39 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 40
+
     env:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
     steps:
       - name: Check out source
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@v4
 
-      - name: Install Node.js for the Vercel CLI
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - name: Install Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - name: Install the pinned Flutter SDK
-        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
         with:
           channel: stable
           flutter-version: 3.47.5
           cache: true
-          pub-cache: true
 
-      - name: Install the pinned Vercel CLI
+      - name: Verify Vercel secrets
+        shell: bash
+        run: |
+          test -n "$VERCEL_TOKEN" || (echo "Secret VERCEL_TOKEN ausente" && exit 1)
+          test -n "$VERCEL_ORG_ID" || (echo "Secret VERCEL_ORG_ID ausente" && exit 1)
+          test -n "$VERCEL_PROJECT_ID" || (echo "Secret VERCEL_PROJECT_ID ausente" && exit 1)
+
+      - name: Install Vercel CLI
         run: npm install --global vercel@64.5.0
 
-      - name: Resolve Flutter dependencies from the lockfile
+      - name: Install Flutter dependencies
         run: flutter pub get --enforce-lockfile
 
       - name: Analyze Dart code
@@ -51,11 +60,16 @@ jobs:
       - name: Run Flutter tests
         run: flutter test --no-pub
 
-      - name: Pull Vercel project settings
+      - name: Build Flutter Web
+        run: flutter build web --release
+
+      - name: Verify Web output
+        shell: bash
+        run: |
+          test -f build/web/index.html || (echo "build/web/index.html não foi gerado" && exit 1)
+
+      - name: Link Vercel project settings
         run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
 
-      - name: Build the static deployment
-        run: vercel build --prod --token="$VERCEL_TOKEN"
-
-      - name: Publish the prebuilt deployment
+      - name: Deploy prebuilt Flutter Web
         run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
