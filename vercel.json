@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
+  "buildCommand": "echo 'Usando GitHub Actions para compilar o Flutter'",
   "outputDirectory": "build/web"
 }
