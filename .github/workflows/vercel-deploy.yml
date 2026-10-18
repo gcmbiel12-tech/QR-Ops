@@ -60,16 +60,16 @@ jobs:
       - name: Run Flutter tests
         run: flutter test --no-pub
 
-      - name: Build Flutter Web
-        run: flutter build web --release
-
-      - name: Verify Web output
-        shell: bash
-        run: |
-          test -f build/web/index.html || (echo "build/web/index.html não foi gerado" && exit 1)
-
       - name: Link Vercel project settings
         run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Build Vercel output
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+
+      - name: Verify Vercel output
+        shell: bash
+        run: |
+          test -f .vercel/output/static/index.html || (echo "Vercel não gerou .vercel/output/static/index.html" && exit 1)
 
       - name: Deploy prebuilt Flutter Web
         run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
