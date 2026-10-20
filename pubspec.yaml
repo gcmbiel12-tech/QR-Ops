@@ -12,6 +12,7 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   idb_shim: ^2.10.1+1
+  mobile_scanner: ^7.2.1
   qr: ^4.0.0
   sqflite: ^2.4.4+2
   sqflite_common_ffi: ^2.4.4

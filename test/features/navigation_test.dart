@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:qr_ops/app/qr_ops_app.dart';
 import 'package:qr_ops/data/app_database.dart';
 import 'package:qr_ops/data/sqlite_qr_record_repository.dart';
+import 'package:qr_ops/features/qr_scan/qr_scan_page.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
@@ -39,10 +40,8 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('nav-ler')));
       await tester.pumpAndSettle();
-      expect(
-        find.textContaining('A leitura pela câmera ainda não está disponível'),
-        findsOneWidget,
-      );
+      expect(find.text('Ler código'), findsOneWidget);
+      expect(find.byType(QrScanPage), findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey('nav-organizar')));
       await tester.pumpAndSettle();

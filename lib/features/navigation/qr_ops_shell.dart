@@ -4,8 +4,8 @@ import '../../domain/qr_record_repository.dart';
 import '../home/home_page.dart';
 import '../qr_create/qr_create_page.dart';
 import '../qr_create/qr_creation_service.dart';
+import '../qr_scan/qr_scan_page.dart';
 import '../qr_history/qr_history_page.dart';
-import '../shared/feature_placeholder_page.dart';
 
 class _Area {
   const _Area({
@@ -96,12 +96,8 @@ class _QrOpsShellState extends State<QrOpsShell> {
                       onRecordCreated: () =>
                           setState(() => _historyRefreshToken++),
                     ),
-                    const FeaturePlaceholderPage(
-                      title: 'Ler',
-                      icon: Icons.qr_code_scanner_rounded,
-                      description:
-                          'A leitura pela câmera ainda não está disponível. '
-                          'O QR Ops não solicita acesso à câmera nesta etapa.',
+                    QrScanPage(
+                      isActive: _selectedIndex == 2,
                     ),
                     QrHistoryPage(
                       repository: widget.repository,
