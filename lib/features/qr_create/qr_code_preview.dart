@@ -2,10 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:qr/qr.dart' as qr;
 
 class QrCodePreview extends StatelessWidget {
-  const QrCodePreview({super.key, required this.image, this.size = 240});
+  const QrCodePreview({
+    super.key,
+    required this.image,
+    this.size = 240,
+    this.foreground = Colors.black,
+    this.background = Colors.white,
+  });
 
   final qr.QrImage image;
   final double size;
+  final Color foreground;
+  final Color background;
 
   @override
   Widget build(BuildContext context) {
@@ -14,16 +22,18 @@ class QrCodePreview extends StatelessWidget {
       child: CustomPaint(
         key: const ValueKey('qr-preview'),
         size: Size.square(size),
-        painter: _QrCodePainter(image),
+        painter: _QrCodePainter(image, foreground, background),
       ),
     );
   }
 }
 
 class _QrCodePainter extends CustomPainter {
-  const _QrCodePainter(this.image);
+  const _QrCodePainter(this.image, this.foreground, this.background);
 
   final qr.QrImage image;
+  final Color foreground;
+  final Color background;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -31,8 +41,8 @@ class _QrCodePainter extends CustomPainter {
     final moduleSize = side / (image.moduleCount + 8);
     final inset = (side - image.moduleCount * moduleSize) / 2;
 
-    canvas.drawRect(Offset.zero & size, Paint()..color = Colors.white);
-    final darkPaint = Paint()..color = Colors.black;
+    canvas.drawRect(Offset.zero & size, Paint()..color = background);
+    final darkPaint = Paint()..color = foreground;
 
     for (var row = 0; row < image.moduleCount; row++) {
       for (var column = 0; column < image.moduleCount; column++) {
@@ -53,5 +63,7 @@ class _QrCodePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _QrCodePainter oldDelegate) =>
-      !identical(oldDelegate.image, image);
+      !identical(oldDelegate.image, image) ||
+      oldDelegate.foreground != foreground ||
+      oldDelegate.background != background;
 }

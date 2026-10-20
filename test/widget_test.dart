@@ -48,6 +48,33 @@ void main() {
     expect(find.byType(NavigationRail), findsOneWidget);
     expect(find.byType(NavigationBar), findsNothing);
   });
+
+  testWidgets('creates and saves a phone QR from the structured form', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repository = _MemoryQrRecordRepository();
+
+    await tester.pumpWidget(QrOpsApp(repository: repository));
+    await tester.tap(find.byKey(const ValueKey('nav-criar')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('qr-content-type')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Telefone').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, '+55 (11) 99999-0000');
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('qr-preview')), findsOneWidget);
+
+    await tester.ensureVisible(find.byKey(const ValueKey('qr-save-button')));
+    await tester.tap(find.byKey(const ValueKey('qr-save-button')));
+    await tester.pumpAndSettle();
+    expect(repository.records.single.content, 'tel:+5511999990000');
+    expect(repository.records.single.contentType, 'phone');
+  });
 }
 
 class _MemoryQrRecordRepository implements QrRecordRepository {

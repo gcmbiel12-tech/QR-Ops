@@ -49,6 +49,13 @@ salva o registro apenas quando a ação explícita de salvar é acionada. A tela
 evita iniciar uma segunda gravação enquanto a primeira está em andamento.
 QrCodePreview desenha a matriz QR com Flutter Canvas.
 
+A criação suporta texto livre, URL HTTP(S), telefone, e-mail, SMS e Wi-Fi.
+QrCreationService compõe os payloads padronizados e valida os campos antes da
+codificação. O campo existente content_type identifica o tipo em registros
+novos; registros antigos continuam com o valor text e não exigem migração. Os
+ajustes de aparência são locais à prévia e usam uma paleta de alto contraste.
+Não há logotipo, exportação ou compartilhamento implementados.
+
 ## Contrato de dados e persistência
 
 O modelo imutável QrRecord conserva ID UUID, tipo de operação, simbologia,
@@ -108,6 +115,21 @@ ou dispositivos. Não há autenticação, backend, sincronização, dados empres
 licença ou direitos de acesso implementados. Recursos pagos e empresariais
 permanecem fora desta etapa; eventual autorização de operações protegidas deve
 ser verificada no servidor em uma etapa futura.
+
+## Pontos de extensão futuros
+
+- Categorias e identificadores operacionais (por exemplo, gaiola ou palete)
+  podem ser associados como metadados a um registro de criação. Ainda não há
+  entidade ou contrato de dados para esses conceitos; o conteúdo QR genérico
+  continua independente.
+- Limites e capacidades comerciais devem ser definidos em um serviço de
+  produto/conta separado da criação e da interface. Não existe plano ativo,
+  autenticação comercial ou bloqueio de recursos.
+- Exportação pode reutilizar a matriz já gerada, mas requer decidir os formatos
+  e as APIs multiplataforma de compartilhamento antes de implementar.
+- QR dinâmico requer serviço de redirecionamento hospedado, persistência,
+  segurança, disponibilidade e custo operacional; os códigos atuais são
+  estáticos e incluem diretamente o conteúdo.
 
 ## Funcionalidades
 

@@ -15,12 +15,16 @@ class QrRecord {
     required this.createdAt,
   });
 
-  factory QrRecord.created({required String content, DateTime? createdAt}) {
+  factory QrRecord.created({
+    required String content,
+    String contentType = 'text',
+    DateTime? createdAt,
+  }) {
     return QrRecord(
       id: _uuid.v4(),
       operation: QrRecordOperation.create,
       symbology: 'qr',
-      contentType: 'text',
+      contentType: contentType,
       content: content,
       createdAt: (createdAt ?? DateTime.now()).toUtc(),
     );
