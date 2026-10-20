@@ -26,6 +26,21 @@ class QrRecord {
     );
   }
 
+  factory QrRecord.read({
+    required String content,
+    required String symbology,
+    DateTime? createdAt,
+  }) {
+    return QrRecord(
+      id: _uuid.v4(),
+      operation: QrRecordOperation.read,
+      symbology: symbology,
+      contentType: 'text',
+      content: content,
+      createdAt: (createdAt ?? DateTime.now()).toUtc(),
+    );
+  }
+
   /// Generated locally so the ID remains stable if the record is later synced.
   final String id;
   final QrRecordOperation operation;

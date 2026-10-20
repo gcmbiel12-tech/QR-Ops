@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../domain/qr_record.dart';
+import '../../domain/qr_record_repository.dart';
+
 @immutable
 class QrScanResult {
   const QrScanResult({required this.value, required this.format});
@@ -24,9 +27,13 @@ class QrScanPage extends StatefulWidget {
     super.key,
     required this.isActive,
     this.previewBuilder,
+    this.repository,
+    this.onRecordRead,
   });
 
   final bool isActive;
+  final QrRecordRepository? repository;
+  final VoidCallback? onRecordRead;
 
   /// Allows scanner behavior to be tested without requesting camera hardware.
   final QrScanPreviewBuilder? previewBuilder;
@@ -158,6 +165,30 @@ class _QrScanPageState extends State<QrScanPage> {
     });
     if (!_usesTestPreview) {
       unawaited(_controller.stop().catchError((Object _) {}));
+    }
+    if (widget.repository != null) {
+      unawaited(_persistResult(result));
+    }
+  }
+
+  Future<void> _persistResult(QrScanResult result) async {
+    try {
+      await widget.repository!.insert(
+        QrRecord.read(
+          content: result.value,
+          symbology: result.format.toLowerCase().replaceAll(' ', '_'),
+        ),
+      );
+      if (mounted) widget.onRecordRead?.call();
+    } on Object {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'A leitura foi exibida, mas não foi possível salvá-la no histórico.',
+          ),
+        ),
+      );
     }
   }
 

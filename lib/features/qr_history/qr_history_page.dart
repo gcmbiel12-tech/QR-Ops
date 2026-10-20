@@ -146,7 +146,7 @@ class _QrHistoryPageState extends State<QrHistoryPage> {
                       final records = snapshot.data ?? const <QrRecord>[];
                       if (records.isEmpty) {
                         return const Center(
-                          child: Text('Os QR Codes criados aparecerão aqui.'),
+                          child: Text('Os códigos criados e lidos aparecerão aqui.'),
                         );
                       }
 
@@ -165,7 +165,9 @@ class _QrHistoryPageState extends State<QrHistoryPage> {
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              subtitle: Text(_formatDate(record.createdAt)),
+                              subtitle: Text(
+                                '${record.operation == QrRecordOperation.read ? 'Lido' : 'Criado'} • ${_formatDate(record.createdAt)}',
+                              ),
                               trailing: IconButton(
                                 tooltip: 'Excluir do histórico',
                                 onPressed: () => _confirmDelete(record),

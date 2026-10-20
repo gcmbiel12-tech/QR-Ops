@@ -98,6 +98,9 @@ class _QrOpsShellState extends State<QrOpsShell> {
                     ),
                     QrScanPage(
                       isActive: _selectedIndex == 2,
+                      repository: widget.repository,
+                      onRecordRead: () =>
+                          setState(() => _historyRefreshToken++),
                     ),
                     QrHistoryPage(
                       repository: widget.repository,
