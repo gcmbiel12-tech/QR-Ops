@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -34,8 +34,6 @@ class QrScanPage extends StatefulWidget {
   final bool isActive;
   final QrRecordRepository? repository;
   final VoidCallback? onRecordRead;
-
-  /// Allows scanner behavior to be tested without requesting camera hardware.
   final QrScanPreviewBuilder? previewBuilder;
 
   @override
@@ -53,45 +51,45 @@ class _QrScanPageState extends State<QrScanPage> {
     BarcodeFormat.code39,
     BarcodeFormat.code93,
     BarcodeFormat.codabar,
-    // Keep generic ITF decoding; BarcodeFormats.itf14 only covers ITF-14.
     // ignore: deprecated_member_use
     BarcodeFormat.itf,
   ];
 
   late final MobileScannerController _controller;
+
   QrScanResult? _result;
   String? _errorMessage;
+
   bool _isStarting = false;
+  bool _cameraEnabled = false;
   bool _hasRead = false;
+
   int _startAttempt = 0;
 
   bool get _usesTestPreview => widget.previewBuilder != null;
+
   bool get _supportsCamera =>
       kIsWeb || defaultTargetPlatform == TargetPlatform.android;
 
   @override
   void initState() {
     super.initState();
+
     _controller = MobileScannerController(
       autoStart: false,
       detectionSpeed: DetectionSpeed.normal,
       formats: _formats,
     );
-    if (widget.isActive) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && widget.isActive) unawaited(_startScanning());
-      });
-    }
   }
 
   @override
   void didUpdateWidget(covariant QrScanPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.isActive == widget.isActive) return;
-    if (widget.isActive) {
-      unawaited(_startScanning());
-    } else {
+
+    if (oldWidget.isActive && !widget.isActive) {
       _startAttempt++;
+      _cameraEnabled = false;
+      _isStarting = false;
       _stopCamera();
     }
   }
@@ -104,12 +102,20 @@ class _QrScanPageState extends State<QrScanPage> {
   }
 
   Future<void> _startScanning() async {
-    if (!widget.isActive) return;
+    if (!mounted || !widget.isActive) return;
+    if (_isStarting || _cameraEnabled) return;
+
     if (!_usesTestPreview && !_supportsCamera) {
-      setState(() => _isStarting = false);
+      setState(() {
+        _errorMessage =
+            'A cÃ¢mera nÃ£o estÃ¡ disponÃ­vel nesta versÃ£o. '
+            'Use o aplicativo Android ou a versÃ£o Web do QR Ops.';
+      });
       return;
     }
+
     final attempt = ++_startAttempt;
+
     setState(() {
       _result = null;
       _errorMessage = null;
@@ -117,55 +123,99 @@ class _QrScanPageState extends State<QrScanPage> {
       _isStarting = !_usesTestPreview;
     });
 
-    if (_usesTestPreview) return;
+    // O preview de teste nÃ£o utiliza hardware.
+    if (_usesTestPreview) {
+      setState(() {
+        _isStarting = false;
+        _cameraEnabled = true;
+      });
+      return;
+    }
 
     try {
       await _controller.start();
+
       if (!mounted || attempt != _startAttempt) return;
+
       final scannerError = _controller.value.error;
+
       if (scannerError != null) {
         _setError(_messageForScannerError(scannerError));
         return;
       }
-      setState(() => _isStarting = false);
+
+      setState(() {
+        _isStarting = false;
+        _cameraEnabled = true;
+      });
     } on Object catch (error) {
       if (!mounted || attempt != _startAttempt) return;
       _setError(_messageForStartError(error));
     }
   }
 
-  void _stopCamera() {
-    if (_usesTestPreview ||
-        !_supportsCamera ||
-        (!_controller.value.isRunning && !_controller.value.isStarting)) {
+  Future<void> _stopScanning() async {
+    _startAttempt++;
+
+    if (mounted) {
+      setState(() {
+        _cameraEnabled = false;
+        _isStarting = false;
+      });
+    }
+
+    await _stopCamera();
+  }
+
+  Future<void> _stopCamera() async {
+    if (_usesTestPreview || !_supportsCamera) return;
+
+    if (!_controller.value.isRunning && !_controller.value.isStarting) {
       return;
     }
-    unawaited(_controller.stop().catchError((Object _) {}));
+
+    try {
+      await _controller.stop();
+    } on Object {
+      // A cÃ¢mera pode jÃ¡ ter sido interrompida.
+    }
   }
 
   void _handleCapture(BarcodeCapture capture) {
-    if (_hasRead || !widget.isActive) return;
+    if (_hasRead || !widget.isActive || !_cameraEnabled) return;
+
     for (final barcode in capture.barcodes) {
       final value = barcode.rawValue;
+
       if (value == null || value.isEmpty) continue;
+
       _acceptResult(
         QrScanResult(value: value, format: _formatLabel(barcode.format)),
       );
+
       return;
     }
   }
 
   void _acceptResult(QrScanResult result) {
     if (_hasRead || !widget.isActive || result.value.isEmpty) return;
+
+    // O preview simulado continua compatÃ­vel com os testes existentes.
+    if (!_usesTestPreview && !_cameraEnabled) return;
+
     _hasRead = true;
+    _startAttempt++;
+
     setState(() {
       _result = result;
       _errorMessage = null;
       _isStarting = false;
+      _cameraEnabled = false;
     });
-    if (!_usesTestPreview) {
-      unawaited(_controller.stop().catchError((Object _) {}));
-    }
+
+    // Interrompe a cÃ¢mera assim que o cÃ³digo Ã© reconhecido.
+    unawaited(_stopCamera());
+
     if (widget.repository != null) {
       unawaited(_persistResult(result));
     }
@@ -179,13 +229,18 @@ class _QrScanPageState extends State<QrScanPage> {
           symbology: result.format.toLowerCase().replaceAll(' ', '_'),
         ),
       );
-      if (mounted) widget.onRecordRead?.call();
+
+      if (mounted) {
+        widget.onRecordRead?.call();
+      }
     } on Object {
       if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'A leitura foi exibida, mas não foi possível salvá-la no histórico.',
+            'A leitura foi exibida, mas nÃ£o foi possÃ­vel '
+            'salvÃ¡-la no histÃ³rico.',
           ),
         ),
       );
@@ -194,49 +249,56 @@ class _QrScanPageState extends State<QrScanPage> {
 
   void _setError(String message) {
     if (!mounted) return;
+
+    _startAttempt++;
+
     setState(() {
       _errorMessage = message;
       _isStarting = false;
+      _cameraEnabled = false;
     });
-    if (!_usesTestPreview) {
-      unawaited(_controller.stop().catchError((Object _) {}));
-    }
+
+    unawaited(_stopCamera());
   }
 
   String _messageForScannerError(MobileScannerException error) {
     return switch (error.errorCode) {
       MobileScannerErrorCode.permissionDenied =>
-        'A permissão da câmera foi negada. Autorize o acesso à câmera nas '
-            'configurações do aplicativo ou do navegador e tente novamente.',
+        'A permissÃ£o da cÃ¢mera foi negada. Autorize o acesso '
+            'nas configuraÃ§Ãµes do aplicativo ou navegador e tente novamente.',
       MobileScannerErrorCode.unsupported =>
-        'Nenhuma câmera compatível foi encontrada. Conecte ou habilite uma '
-            'câmera e tente novamente.',
+        'Nenhuma cÃ¢mera compatÃ­vel foi encontrada. '
+            'Conecte ou habilite uma cÃ¢mera e tente novamente.',
       _ => _messageForStartError(error),
     };
   }
 
   String _messageForStartError(Object error) {
     final message = error.toString().toLowerCase();
+
     if (message.contains('permission') ||
         message.contains('notallowederror') ||
         message.contains('denied')) {
-      return 'O acesso à câmera foi negado. Permita o uso da câmera nas '
-          'configurações do navegador ou do aplicativo e tente novamente.';
+      return 'O acesso Ã  cÃ¢mera foi negado. Permita o uso '
+          'da cÃ¢mera nas configuraÃ§Ãµes do navegador ou aplicativo.';
     }
+
     if (message.contains('notfounderror') ||
         message.contains('no camera') ||
         message.contains('camera not found')) {
-      return 'Nenhuma câmera foi encontrada. Conecte uma webcam ou habilite '
-          'a câmera do dispositivo e tente novamente.';
+      return 'Nenhuma cÃ¢mera foi encontrada. Conecte uma webcam '
+          'ou habilite a cÃ¢mera do dispositivo.';
     }
+
     if (message.contains('notreadableerror') ||
         message.contains('could not start video source') ||
         message.contains('in use')) {
-      return 'A câmera está indisponível ou sendo usada por outro aplicativo. '
-          'Feche outros aplicativos ou abas que usam a câmera e tente novamente.';
+      return 'A cÃ¢mera estÃ¡ indisponÃ­vel ou sendo usada por outro '
+          'aplicativo. Feche os outros aplicativos que utilizam a cÃ¢mera.';
     }
-    return 'Não foi possível iniciar a câmera. Verifique a conexão, a '
-        'permissão e se outro aplicativo está usando a câmera; depois tente novamente.';
+
+    return 'NÃ£o foi possÃ­vel iniciar a cÃ¢mera. Verifique as permissÃµes '
+        'e se outro aplicativo estÃ¡ utilizando a cÃ¢mera.';
   }
 
   String _formatLabel(BarcodeFormat format) => switch (format) {
@@ -251,32 +313,42 @@ class _QrScanPageState extends State<QrScanPage> {
     BarcodeFormat.codabar => 'Codabar',
     // ignore: deprecated_member_use
     BarcodeFormat.itf => 'ITF',
-    _ => 'Código de barras',
+    _ => 'CÃ³digo de barras',
   };
 
   Future<void> _copyResult() async {
     final result = _result;
     if (result == null) return;
+
     await Clipboard.setData(ClipboardData(text: result.value));
+
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Conteúdo copiado.')),
-    );
+
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Conte\u00FAdo copiado.')));
   }
 
   Future<void> _switchCamera() async {
+    if (!_cameraEnabled || _usesTestPreview) return;
+
     try {
       await _controller.switchCamera();
     } on Object catch (error) {
-      if (mounted) _setError(_messageForStartError(error));
+      if (mounted) {
+        _setError(_messageForStartError(error));
+      }
     }
   }
 
   Future<void> _toggleTorch() async {
+    if (!_cameraEnabled || _usesTestPreview) return;
+
     try {
       await _controller.toggleTorch();
     } on Object catch (error) {
-      if (mounted) _setError(_messageForStartError(error));
+      if (mounted) {
+        _setError(_messageForStartError(error));
+      }
     }
   }
 
@@ -296,8 +368,8 @@ class _QrScanPageState extends State<QrScanPage> {
                 Text('Ler código', style: textTheme.headlineMedium),
                 const SizedBox(height: 8),
                 Text(
-                  'Aponte a câmera para um QR Code ou código de barras. '
-                  'O conteúdo será lido apenas neste dispositivo.',
+                  'Leia QR Codes e cÃ³digos de barras. '
+                  'A cÃ¢mera sÃ³ serÃ¡ iniciada quando vocÃª solicitar.',
                   style: textTheme.bodyLarge,
                 ),
                 const SizedBox(height: 16),
@@ -313,7 +385,7 @@ class _QrScanPageState extends State<QrScanPage> {
                           const SizedBox(height: 12),
                           const Center(
                             child: CircularProgressIndicator(
-                              semanticsLabel: 'Iniciando a câmera',
+                              semanticsLabel: 'Iniciando a cÃ¢mera',
                             ),
                           ),
                         ],
@@ -346,8 +418,9 @@ class _QrScanPageState extends State<QrScanPage> {
                           const SizedBox(height: 12),
                           const _MessageCard(
                             icon: Icons.center_focus_strong_rounded,
-                            message: 'Mantenha o código dentro da área da câmera. '
-                                'Se não for reconhecido, ajuste a distância e a iluminação.',
+                            message:
+                                'Mantenha o cÃ³digo dentro da Ã¡rea da cÃ¢mera. '
+                                'A leitura serÃ¡ interrompida apÃ³s o reconhecimento.',
                           ),
                           const SizedBox(height: 8),
                           _buildCameraActions(),
@@ -366,9 +439,10 @@ class _QrScanPageState extends State<QrScanPage> {
 
   Widget _buildSecurityHint(TextTheme textTheme) {
     if (!kIsWeb) return const SizedBox.shrink();
+
     return Text(
-      'No navegador, permita o acesso à câmera. O site precisa estar em HTTPS '
-      'ou em um contexto seguro compatível (como localhost).',
+      'No navegador, permita o acesso Ã  cÃ¢mera. O site precisa estar em HTTPS '
+      'ou em um contexto seguro compatÃ­vel, como localhost.',
       key: const ValueKey('qr-scan-web-permission-hint'),
       style: textTheme.bodySmall,
     );
@@ -376,6 +450,7 @@ class _QrScanPageState extends State<QrScanPage> {
 
   Widget _buildPreview() {
     final builder = widget.previewBuilder;
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: SizedBox(
@@ -397,8 +472,10 @@ class _QrScanPageState extends State<QrScanPage> {
             ? const _MessageCard(
                 key: ValueKey('qr-scan-platform-limit'),
                 icon: Icons.info_outline_rounded,
-                message: 'A câmera não está disponível no executável Windows. '
-                    'Abra a versão Web do QR Ops em um navegador para usar uma webcam.',
+                message:
+                    'A cÃ¢mera nÃ£o estÃ¡ disponÃ­vel no executÃ¡vel '
+                    'Windows. Use o aplicativo Android ou a versÃ£o '
+                    'Web do QR Ops para utilizar uma cÃ¢mera.',
               )
             : MobileScanner(
                 controller: _controller,
@@ -412,7 +489,10 @@ class _QrScanPageState extends State<QrScanPage> {
     );
   }
 
-  Widget _buildScannerError(BuildContext context, MobileScannerException error) {
+  Widget _buildScannerError(
+    BuildContext context,
+    MobileScannerException error,
+  ) {
     return Padding(
       padding: const EdgeInsets.all(12),
       child: Column(
@@ -435,25 +515,52 @@ class _QrScanPageState extends State<QrScanPage> {
   }
 
   Widget _buildCameraActions() {
-    if (_usesTestPreview) return const SizedBox.shrink();
+    if (!_usesTestPreview && !_supportsCamera) {
+      return const SizedBox.shrink();
+    }
+
     return ValueListenableBuilder<MobileScannerState>(
       valueListenable: _controller,
       builder: (context, state, _) {
         final cameraCount = state.availableCameras ?? 0;
         final canUseTorch = state.torchState != TorchState.unavailable;
+
         return Wrap(
           alignment: WrapAlignment.center,
           spacing: 8,
           runSpacing: 8,
           children: [
-            if (cameraCount > 1)
+            if (_isStarting)
+              OutlinedButton.icon(
+                key: const ValueKey('qr-scan-cancel-start'),
+                onPressed: _stopScanning,
+                icon: const Icon(Icons.close_rounded),
+                label: const Text('Cancelar inicializaÃ§Ã£o'),
+              )
+            else if (_cameraEnabled)
+              FilledButton.icon(
+                key: const ValueKey('qr-scan-stop'),
+                onPressed: _stopScanning,
+                icon: const Icon(Icons.stop_circle_outlined),
+                label: const Text('Parar cÃ¢mera'),
+              )
+            else
+              FilledButton.icon(
+                key: const ValueKey('qr-scan-start'),
+                onPressed: _startScanning,
+                icon: const Icon(Icons.camera_alt_outlined),
+                label: Text(
+                  _usesTestPreview ? 'Ativar leitor' : 'Ativar cÃ¢mera',
+                ),
+              ),
+            if (_cameraEnabled && !_usesTestPreview && cameraCount > 1)
               OutlinedButton.icon(
                 key: const ValueKey('qr-scan-switch-camera'),
                 onPressed: _switchCamera,
                 icon: const Icon(Icons.cameraswitch_rounded),
-                label: const Text('Trocar câmera'),
+                label: const Text('Frontal / traseira'),
               ),
-            if (canUseTorch)
+            if (_cameraEnabled && !_usesTestPreview && canUseTorch)
               OutlinedButton.icon(
                 key: const ValueKey('qr-scan-torch'),
                 onPressed: _toggleTorch,
@@ -463,7 +570,9 @@ class _QrScanPageState extends State<QrScanPage> {
                       : Icons.flashlight_on_rounded,
                 ),
                 label: Text(
-                  state.torchState == TorchState.on ? 'Desligar lanterna' : 'Lanterna',
+                  state.torchState == TorchState.on
+                      ? 'Desligar lanterna'
+                      : 'Lanterna',
                 ),
               ),
           ],
@@ -488,9 +597,15 @@ class _ResultCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Formato: ${result.format}', style: Theme.of(context).textTheme.labelLarge),
+            Text(
+              'Formato: ${result.format}',
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
             const SizedBox(height: 8),
-            SelectableText(result.value, key: const ValueKey('qr-scan-result-value')),
+            SelectableText(
+              result.value,
+              key: const ValueKey('qr-scan-result-value'),
+            ),
             const SizedBox(height: 8),
             Align(
               alignment: Alignment.centerRight,
@@ -523,6 +638,7 @@ class _MessageCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = isError ? Theme.of(context).colorScheme.error : null;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -531,10 +647,15 @@ class _MessageCard extends StatelessWidget {
           children: [
             Icon(icon, color: color),
             const SizedBox(width: 12),
-            Expanded(child: Text(message, style: TextStyle(color: color))),
+            Expanded(
+              child: Text(message, style: TextStyle(color: color)),
+            ),
           ],
         ),
       ),
     );
   }
 }
+
+
+
