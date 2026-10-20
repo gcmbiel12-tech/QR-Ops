@@ -46,6 +46,8 @@ class _QrScanPageState extends State<QrScanPage> {
     BarcodeFormat.code39,
     BarcodeFormat.code93,
     BarcodeFormat.codabar,
+    // Keep generic ITF decoding; BarcodeFormats.itf14 only covers ITF-14.
+    // ignore: deprecated_member_use
     BarcodeFormat.itf,
   ];
 
@@ -216,6 +218,7 @@ class _QrScanPageState extends State<QrScanPage> {
     BarcodeFormat.code39 => 'Code 39',
     BarcodeFormat.code93 => 'Code 93',
     BarcodeFormat.codabar => 'Codabar',
+    // ignore: deprecated_member_use
     BarcodeFormat.itf => 'ITF',
     _ => 'Código de barras',
   };

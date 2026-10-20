@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:qr_ops/app/qr_ops_app.dart';
 import 'package:qr_ops/data/app_database.dart';
@@ -10,7 +12,18 @@ void main() {
   late Database database;
   late SqliteQrRecordRepository repository;
 
-  setUpAll(sqfliteFfiInit);
+  setUpAll(() {
+    sqfliteFfiInit();
+    // Controller.dispose sends a stop call even though this test intentionally
+    // uses the unsupported-platform UI instead of initializing a real camera.
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel(
+            'dev.steenbakker.mobile_scanner/scanner/method',
+          ),
+          (call) async => null,
+        );
+  });
 
   setUp(() async {
     database = await AppDatabase(
@@ -25,27 +38,38 @@ void main() {
   testWidgets(
     'navigation opens implemented QR creation and local history areas',
     (tester) async {
-      await tester.pumpWidget(QrOpsApp(repository: repository));
+      // The navigation test checks routing, not camera hardware or the plugin.
+      // On Windows the page presents its supported-platform message and does
+      // not initialize MobileScanner or request a camera stream.
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      try {
+        await tester.pumpWidget(QrOpsApp(repository: repository));
 
-      expect(find.byType(NavigationRail), findsOneWidget);
+        expect(find.byType(NavigationRail), findsOneWidget);
 
-      expect(
-        find.text('Sua base para operações com códigos QR.'),
-        findsOneWidget,
-      );
+        expect(
+          find.text('Sua base para operações com códigos QR.'),
+          findsOneWidget,
+        );
 
-      await tester.tap(find.byKey(const ValueKey('nav-criar')));
-      await tester.pumpAndSettle();
-      expect(find.text('Criar QR Code'), findsOneWidget);
+        await tester.tap(find.byKey(const ValueKey('nav-criar')));
+        await tester.pumpAndSettle();
+        expect(find.text('Criar QR Code'), findsOneWidget);
 
-      await tester.tap(find.byKey(const ValueKey('nav-ler')));
-      await tester.pumpAndSettle();
-      expect(find.text('Ler código'), findsOneWidget);
-      expect(find.byType(QrScanPage), findsOneWidget);
+        await tester.tap(find.byKey(const ValueKey('nav-ler')));
+        // Avoid settling animation frames indefinitely while an IndexedStack
+        // child contains camera-related progress indicators.
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(find.text('Ler código'), findsOneWidget);
+        expect(find.byType(QrScanPage), findsOneWidget);
 
-      await tester.tap(find.byKey(const ValueKey('nav-organizar')));
-      await tester.pumpAndSettle();
-      expect(find.text('Histórico local'), findsOneWidget);
+        await tester.tap(find.byKey(const ValueKey('nav-organizar')));
+        await tester.pumpAndSettle();
+        expect(find.text('Histórico local'), findsOneWidget);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
     },
   );
 
