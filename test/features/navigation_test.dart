@@ -14,13 +14,10 @@ void main() {
 
   setUpAll(() {
     sqfliteFfiInit();
-    // Controller.dispose sends a stop call even though this test intentionally
-    // uses the unsupported-platform UI instead of initializing a real camera.
+
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-          const MethodChannel(
-            'dev.steenbakker.mobile_scanner/scanner/method',
-          ),
+          const MethodChannel('dev.steenbakker.mobile_scanner/scanner/method'),
           (call) async => null,
         );
   });
@@ -38,15 +35,12 @@ void main() {
   testWidgets(
     'navigation opens implemented QR creation and local history areas',
     (tester) async {
-      // The navigation test checks routing, not camera hardware or the plugin.
-      // On Windows the page presents its supported-platform message and does
-      // not initialize MobileScanner or request a camera stream.
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+
       try {
         await tester.pumpWidget(QrOpsApp(repository: repository));
 
         expect(find.byType(NavigationRail), findsOneWidget);
-
         expect(
           find.text('Sua base para operações com códigos QR.'),
           findsOneWidget,
@@ -57,15 +51,15 @@ void main() {
         expect(find.text('Criar QR Code'), findsOneWidget);
 
         await tester.tap(find.byKey(const ValueKey('nav-ler')));
-        // Avoid settling animation frames indefinitely while an IndexedStack
-        // child contains camera-related progress indicators.
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
+
         expect(find.text('Ler código'), findsOneWidget);
         expect(find.byType(QrScanPage), findsOneWidget);
 
         await tester.tap(find.byKey(const ValueKey('nav-organizar')));
         await tester.pumpAndSettle();
+
         expect(find.text('Histórico local'), findsOneWidget);
       } finally {
         debugDefaultTargetPlatformOverride = null;
@@ -96,32 +90,48 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('nav-criar')));
     await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('qr-type-url')));
+    await tester.pumpAndSettle();
+
     await tester.enterText(
-      find.byKey(const ValueKey('qr-content-field')),
+      find.byKey(const ValueKey('qr-content-field-url')),
       'https://example.com/qr-ops',
     );
     await tester.pumpAndSettle();
 
+    expect(find.byKey(const ValueKey('qr-preview')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('qr-create-button')));
+    await tester.pumpAndSettle();
+
     expect(find.byKey(const ValueKey('qr-preview')), findsOneWidget);
+
     tester.binding.focusManager.primaryFocus?.unfocus();
     await tester.pump();
+
     await tester.ensureVisible(find.byKey(const ValueKey('qr-save-button')));
     await tester.tap(find.byKey(const ValueKey('qr-save-button')));
     await tester.pump();
+
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 200)),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
+
     expect(find.text('QR Code salvo no histórico local.'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('nav-organizar')));
     await tester.pump();
+
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 200)),
     );
     await tester.pump();
+
     expect(find.text('https://example.com/qr-ops'), findsOneWidget);
+
     final saved = await tester.runAsync(repository.listLatest);
     expect(saved, hasLength(1));
   });

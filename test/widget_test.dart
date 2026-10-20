@@ -12,6 +12,7 @@ void main() {
     tester.view.physicalSize = const Size(390, 844);
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
+
     final repository = _MemoryQrRecordRepository();
 
     await tester.pumpWidget(QrOpsApp(repository: repository));
@@ -19,19 +20,35 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('nav-criar')));
     await tester.pumpAndSettle();
+
+    // Seleciona o tipo de conteúdo.
+    await tester.tap(find.byKey(const ValueKey('qr-type-text')));
+    await tester.pumpAndSettle();
+
+    // Preenche o conteúdo.
     await tester.enterText(
       find.byKey(const ValueKey('qr-content-field')),
       'QR Ops no navegador',
     );
     await tester.pumpAndSettle();
+
+    // O QR não deve aparecer antes de clicar em Criar QR.
+    expect(find.byKey(const ValueKey('qr-preview')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('qr-create-button')));
+    await tester.pumpAndSettle();
+
     expect(find.byKey(const ValueKey('qr-preview')), findsOneWidget);
 
+    await tester.ensureVisible(find.byKey(const ValueKey('qr-save-button')));
     await tester.tap(find.byKey(const ValueKey('qr-save-button')));
     await tester.pumpAndSettle();
+
     expect(repository.records, hasLength(1));
 
     await tester.tap(find.byKey(const ValueKey('nav-organizar')));
     await tester.pumpAndSettle();
+
     expect(find.text('QR Ops no navegador'), findsOneWidget);
   });
 
@@ -56,22 +73,37 @@ void main() {
     tester.view.physicalSize = const Size(390, 844);
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
+
     final repository = _MemoryQrRecordRepository();
 
     await tester.pumpWidget(QrOpsApp(repository: repository));
+
     await tester.tap(find.byKey(const ValueKey('nav-criar')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('qr-content-type')));
+
+    // Seleciona Telefone diretamente na tela de tipos.
+    await tester.tap(find.byKey(const ValueKey('qr-type-phone')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Telefone').last);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('qr-content-field-phone')),
+      '+55 (11) 99999-0000',
+    );
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).first, '+55 (11) 99999-0000');
+
+    // A criação deve ser explícita.
+    expect(find.byKey(const ValueKey('qr-preview')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('qr-create-button')));
     await tester.pumpAndSettle();
+
     expect(find.byKey(const ValueKey('qr-preview')), findsOneWidget);
 
     await tester.ensureVisible(find.byKey(const ValueKey('qr-save-button')));
     await tester.tap(find.byKey(const ValueKey('qr-save-button')));
     await tester.pumpAndSettle();
+
+    expect(repository.records, hasLength(1));
     expect(repository.records.single.content, 'tel:+5511999990000');
     expect(repository.records.single.contentType, 'phone');
   });
@@ -93,7 +125,9 @@ class _MemoryQrRecordRepository implements QrRecordRepository {
   @override
   Future<QrRecord?> findById(String id) async {
     for (final record in records) {
-      if (record.id == id) return record;
+      if (record.id == id) {
+        return record;
+      }
     }
     return null;
   }
