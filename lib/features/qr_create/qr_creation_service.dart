@@ -18,7 +18,13 @@ extension QrContentTypeLabel on QrContentType {
   String get storageValue => name;
 }
 
-enum QrContentProblem { empty, invalid, tooLong }
+enum QrContentProblem {
+  empty,
+  invalid,
+  urlSchemeRequired,
+  malformedUrl,
+  tooLong,
+}
 
 class QrContentException implements Exception {
   const QrContentException(this.problem);
@@ -66,17 +72,23 @@ class QrCreationService {
         content = draft.value;
         break;
       case QrContentType.url:
-        final candidate = Uri.tryParse(value);
-        final uri = candidate != null && candidate.hasScheme
-            ? candidate
-            : Uri.tryParse('https://$value');
-        if (uri == null ||
-            !const {'http', 'https'}.contains(uri.scheme.toLowerCase()) ||
+        final uri = Uri.tryParse(value);
+        if (uri == null) {
+          throw const QrContentException(QrContentProblem.malformedUrl);
+        }
+        if (!uri.hasScheme ||
+            !const {'http', 'https'}.contains(uri.scheme.toLowerCase())) {
+          throw const QrContentException(QrContentProblem.urlSchemeRequired);
+        }
+        if (value != draft.value ||
+            RegExp(r'\s').hasMatch(value) ||
+            RegExp(r'%(?![0-9A-Fa-f]{2})').hasMatch(value) ||
             uri.host.isEmpty ||
             uri.userInfo.isNotEmpty) {
-          throw const QrContentException(QrContentProblem.invalid);
+          throw const QrContentException(QrContentProblem.malformedUrl);
         }
-        content = uri.toString();
+        // Validate the address, but encode exactly what the user entered.
+        content = draft.value;
         break;
       case QrContentType.phone:
         final phone = _phone(value);
@@ -132,11 +144,24 @@ class QrCreationService {
       throw const QrContentException(QrContentProblem.empty);
     }
     try {
+      final payload = QrPayload.fromString(content);
+      if (content.codeUnits.any((unit) => unit > 127 && unit <= 255)) {
+        // qr's string helper encodes byte segments as UTF-8, but only adds an
+        // ECI marker automatically for code points above Latin-1. Mark Latin-1
+        // accents too, so independent readers do not interpret UTF-8 bytes as
+        // ISO-8859-1.
+        final utf8Payload = QrPayload()
+          ..addECI(QrEciValue.utf8)
+          ..addString(content);
+        return QrImage(
+          QrCode(
+            payload: utf8Payload,
+            errorCorrectLevel: QrErrorCorrectLevel.medium,
+          ),
+        );
+      }
       return QrImage(
-        QrCode(
-          payload: QrPayload.fromString(content),
-          errorCorrectLevel: QrErrorCorrectLevel.medium,
-        ),
+        QrCode(payload: payload, errorCorrectLevel: QrErrorCorrectLevel.medium),
       );
     } on InputTooLongException {
       throw const QrContentException(QrContentProblem.tooLong);

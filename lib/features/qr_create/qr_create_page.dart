@@ -1,18 +1,32 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:qr/qr.dart' as qr;
 
+import 'qr_code_download.dart';
 import 'qr_code_preview.dart';
+import 'qr_png_exporter.dart';
 import 'qr_creation_service.dart';
+
+typedef QrPngDownloadHandler = Future<void> Function(
+  Uint8List bytes, {
+  required String filename,
+});
+typedef QrPngExportHandler = Future<Uint8List> Function(qr.QrImage image);
 
 class QrCreatePage extends StatefulWidget {
   const QrCreatePage({
     super.key,
     required this.service,
     required this.onRecordCreated,
+    this.downloadHandler,
+    this.pngExportHandler,
   });
 
   final QrCreationService service;
   final VoidCallback onRecordCreated;
+  final QrPngDownloadHandler? downloadHandler;
+  final QrPngExportHandler? pngExportHandler;
 
   @override
   State<QrCreatePage> createState() => _QrCreatePageState();
@@ -65,9 +79,11 @@ class _QrCreatePageState extends State<QrCreatePage> {
   qr.QrImage? _preview;
   String? _validationMessage;
   String? _saveError;
+  String? _downloadError;
 
   bool _typeSelected = false;
   bool _saving = false;
+  bool _downloading = false;
 
   @override
   void initState() {
@@ -97,6 +113,10 @@ class _QrCreatePageState extends State<QrCreatePage> {
   String _messageFor(QrContentProblem problem) => switch (problem) {
     QrContentProblem.empty => 'Preencha o conteúdo para gerar o QR Code.',
     QrContentProblem.invalid => 'Confira os dados informados para este tipo.',
+    QrContentProblem.urlSchemeRequired =>
+      'A URL precisa começar com http:// ou https://.',
+    QrContentProblem.malformedUrl =>
+      'A URL está malformada ou contém caracteres inválidos.',
     QrContentProblem.tooLong => 'O conteúdo é longo demais para um QR Code.',
   };
 
@@ -107,6 +127,7 @@ class _QrCreatePageState extends State<QrCreatePage> {
       _preview = null;
       _validationMessage = null;
       _saveError = null;
+      _downloadError = null;
     });
   }
 
@@ -124,6 +145,7 @@ class _QrCreatePageState extends State<QrCreatePage> {
       _preview = null;
       _validationMessage = null;
       _saveError = null;
+      _downloadError = null;
     });
 
     _valueController.text = fields[0];
@@ -142,6 +164,7 @@ class _QrCreatePageState extends State<QrCreatePage> {
         _preview = image;
         _validationMessage = null;
         _saveError = null;
+        _downloadError = null;
       });
     } on QrContentException catch (error) {
       setState(() {
@@ -151,12 +174,38 @@ class _QrCreatePageState extends State<QrCreatePage> {
     }
   }
 
+  Future<void> _downloadPng() async {
+    final preview = _preview;
+    if (_downloading || preview == null) return;
+
+    setState(() {
+      _downloading = true;
+      _downloadError = null;
+    });
+
+    try {
+      final export = widget.pngExportHandler ?? const QrPngExporter().export;
+      final bytes = await export(preview);
+      final download = widget.downloadHandler ?? downloadQrCodePng;
+      await download(bytes, filename: 'qr-code.png');
+    } on Object {
+      if (mounted) {
+        setState(() {
+          _downloadError = 'Não foi possível baixar o PNG. Tente novamente.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
   Future<void> _save() async {
     if (_saving || _preview == null) return;
 
     setState(() {
       _saving = true;
       _saveError = null;
+      _downloadError = null;
     });
 
     try {
@@ -506,6 +555,31 @@ class _QrCreatePageState extends State<QrCreatePage> {
                         : const Icon(Icons.save_outlined),
                     label: Text(
                       _saving ? 'Salvando...' : 'Salvar no histórico',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    key: const ValueKey('qr-download-png-button'),
+                    onPressed: _saving || _downloading ? null : _downloadPng,
+                    icon: _downloading
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.download_outlined),
+                    label: Text(
+                      _downloading ? 'Preparando PNG...' : 'Baixar PNG',
+                    ),
+                  ),
+                ],
+                if (_downloadError case final message?) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    message,
+                    key: const ValueKey('qr-download-error'),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
                     ),
                   ),
                 ],
