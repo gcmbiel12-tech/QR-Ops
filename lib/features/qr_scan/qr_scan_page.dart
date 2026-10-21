@@ -1,9 +1,10 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:url_launcher/url_launcher.dart' as launcher;
 
 import '../../domain/qr_record.dart';
 import '../../domain/qr_record_repository.dart';
@@ -21,6 +22,7 @@ typedef QrScanPreviewBuilder = Widget Function(
   ValueChanged<QrScanResult> onResult,
   ValueChanged<String> onError,
 );
+typedef QrScanUrlLauncher = Future<bool> Function(Uri uri);
 
 class QrScanPage extends StatefulWidget {
   const QrScanPage({
@@ -29,12 +31,14 @@ class QrScanPage extends StatefulWidget {
     this.previewBuilder,
     this.repository,
     this.onRecordRead,
+    this.urlLauncher,
   });
 
   final bool isActive;
   final QrRecordRepository? repository;
   final VoidCallback? onRecordRead;
   final QrScanPreviewBuilder? previewBuilder;
+  final QrScanUrlLauncher? urlLauncher;
 
   @override
   State<QrScanPage> createState() => _QrScanPageState();
@@ -328,6 +332,26 @@ class _QrScanPageState extends State<QrScanPage> {
         .showSnackBar(const SnackBar(content: Text('Conte\u00FAdo copiado.')));
   }
 
+  Future<void> _openResultUrl(Uri uri) async {
+    try {
+      final openUrl =
+          widget.urlLauncher ??
+          (value) => launcher.launchUrl(
+            value,
+            mode: launcher.LaunchMode.externalApplication,
+          );
+      final opened = await openUrl(uri);
+      if (!opened) throw StateError('O navegador não confirmou a abertura.');
+    } on Object {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Não foi possível abrir este link no navegador.'),
+        ),
+      );
+    }
+  }
+
   Future<void> _switchCamera() async {
     if (!_cameraEnabled || _usesTestPreview) return;
 
@@ -406,7 +430,11 @@ class _QrScanPageState extends State<QrScanPage> {
                           ),
                         ] else if (_result case final result?) ...[
                           const SizedBox(height: 12),
-                          _ResultCard(result: result, onCopy: _copyResult),
+                          _ResultCard(
+                            result: result,
+                            onCopy: _copyResult,
+                            onOpenUrl: _openResultUrl,
+                          ),
                           const SizedBox(height: 8),
                           FilledButton.icon(
                             key: const ValueKey('qr-scan-again'),
@@ -583,13 +611,36 @@ class _QrScanPageState extends State<QrScanPage> {
 }
 
 class _ResultCard extends StatelessWidget {
-  const _ResultCard({required this.result, required this.onCopy});
+  const _ResultCard({
+    required this.result,
+    required this.onCopy,
+    required this.onOpenUrl,
+  });
 
   final QrScanResult result;
   final VoidCallback onCopy;
+  final ValueChanged<Uri> onOpenUrl;
+
+  Uri? get _httpUri {
+    final value = result.value;
+    if (value.isEmpty ||
+        value.trim() != value ||
+        RegExp(r'\s').hasMatch(value)) {
+      return null;
+    }
+
+    final uri = Uri.tryParse(value);
+    if (uri == null ||
+        !const {'http', 'https'}.contains(uri.scheme.toLowerCase()) ||
+        uri.host.isEmpty) {
+      return null;
+    }
+    return uri;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final uri = _httpUri;
     return Card(
       key: const ValueKey('qr-scan-result'),
       child: Padding(
@@ -605,6 +656,13 @@ class _ResultCard extends StatelessWidget {
             SelectableText(
               result.value,
               key: const ValueKey('qr-scan-result-value'),
+              onTap: uri == null ? null : () => onOpenUrl(uri),
+              style: uri == null
+                  ? null
+                  : TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
+                      decoration: TextDecoration.underline,
+                    ),
             ),
             const SizedBox(height: 8),
             Align(
@@ -656,6 +714,3 @@ class _MessageCard extends StatelessWidget {
     );
   }
 }
-
-
-
