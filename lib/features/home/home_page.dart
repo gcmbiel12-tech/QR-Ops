@@ -7,35 +7,37 @@ class HomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
 
     return SafeArea(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 760),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('QR Ops', style: textTheme.headlineMedium),
-                const SizedBox(height: 8),
+                Text('QR Ops', style: theme.textTheme.headlineMedium),
+                const SizedBox(height: 6),
                 Text(
-                  'Sua base para operações com códigos QR.',
-                  style: textTheme.bodyLarge,
+                  'Tudo pronto para o próximo passo.',
+                  style: theme.textTheme.bodyLarge,
                 ),
                 const SizedBox(height: 24),
                 Card(
-                  color: Theme.of(context).colorScheme.primaryContainer,
+                  color: colors.primaryContainer,
+                  clipBehavior: Clip.antiAlias,
                   child: Padding(
-                    padding: const EdgeInsets.all(24),
+                    padding: const EdgeInsets.all(20),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Icon(
                           Icons.qr_code_2_rounded,
-                          size: 40,
-                          color: Theme.of(context).colorScheme.primary,
+                          size: 42,
+                          color: colors.onPrimaryContainer,
                         ),
                         const SizedBox(width: 16),
                         Expanded(
@@ -43,16 +45,25 @@ class HomePage extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Fundação inicial',
-                                style: textTheme.titleLarge,
+                                'O que vamos criar hoje?',
+                                style: theme.textTheme.titleLarge?.copyWith(
+                                  color: colors.onPrimaryContainer,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'A navegação e o armazenamento local estão '
-                                'preparados. Já é possível criar QR Codes e consultar o '
-                                'histórico local. A leitura pela câmera será adicionada '
-                                'em uma etapa futura.',
-                                style: textTheme.bodyMedium,
+                                'Gere um QR Code, leia um código ou consulte os itens salvos.',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: colors.onPrimaryContainer,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              FilledButton.icon(
+                                key: const ValueKey('home-start-creating'),
+                                onPressed: () => onNavigate(1),
+                                icon: const Icon(Icons.add_rounded),
+                                label: const Text('Ir para criação'),
                               ),
                             ],
                           ),
@@ -61,27 +72,30 @@ class HomePage extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(height: 28),
-                Text('Áreas do aplicativo', style: textTheme.titleMedium),
+                const SizedBox(height: 24),
+                Text(
+                  'Acesso rápido',
+                  style: theme.textTheme.titleLarge,
+                ),
                 const SizedBox(height: 12),
                 _AreaShortcut(
-                  icon: Icons.qr_code_2_rounded,
-                  title: 'Criar',
-                  description: 'Gere um QR Code e salve no histórico local.',
-                  onTap: () => onNavigate(1),
-                ),
-                _AreaShortcut(
                   icon: Icons.qr_code_scanner_rounded,
-                  title: 'Ler',
-                  description: 'Leitura pela câmera, planejada.',
+                  title: 'Ler um código',
+                  description: 'Leia QR Codes e códigos de barras.',
                   onTap: () => onNavigate(2),
                 ),
                 _AreaShortcut(
                   icon: Icons.folder_rounded,
-                  title: 'Organizar',
-                  description:
-                      'Consulte e remova QR Codes salvos neste dispositivo.',
+                  title: 'Organizar códigos',
+                  description: 'Consulte os códigos salvos neste dispositivo.',
                   onTap: () => onNavigate(3),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Mais recursos serão adicionados aqui.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),

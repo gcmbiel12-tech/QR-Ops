@@ -83,6 +83,7 @@ void main() {
     await tester.pumpWidget(QrOpsApp(repository: repository));
     await tester.tap(find.byKey(const ValueKey('nav-criar')));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('qr-type-url')));
     await tester.tap(find.byKey(const ValueKey('qr-type-url')));
     await tester.pumpAndSettle();
     await tester.enterText(
@@ -269,6 +270,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Seleciona Telefone diretamente na tela de tipos.
+    await tester.ensureVisible(find.byKey(const ValueKey('qr-type-phone')));
     await tester.tap(find.byKey(const ValueKey('qr-type-phone')));
     await tester.pumpAndSettle();
 

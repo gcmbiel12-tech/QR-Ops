@@ -112,8 +112,8 @@ class _QrScanPageState extends State<QrScanPage> {
     if (!_usesTestPreview && !_supportsCamera) {
       setState(() {
         _errorMessage =
-            'A cÃ¢mera nÃ£o estÃ¡ disponÃ­vel nesta versÃ£o. '
-            'Use o aplicativo Android ou a versÃ£o Web do QR Ops.';
+            'A câmera não está disponível nesta versão. '
+            'Use o aplicativo Android ou a versão Web do QR Ops.';
       });
       return;
     }
@@ -127,7 +127,7 @@ class _QrScanPageState extends State<QrScanPage> {
       _isStarting = !_usesTestPreview;
     });
 
-    // O preview de teste nÃ£o utiliza hardware.
+    // O preview de teste não utiliza hardware.
     if (_usesTestPreview) {
       setState(() {
         _isStarting = false;
@@ -181,7 +181,7 @@ class _QrScanPageState extends State<QrScanPage> {
     try {
       await _controller.stop();
     } on Object {
-      // A cÃ¢mera pode jÃ¡ ter sido interrompida.
+      // A câmera pode já ter sido interrompida.
     }
   }
 
@@ -204,7 +204,7 @@ class _QrScanPageState extends State<QrScanPage> {
   void _acceptResult(QrScanResult result) {
     if (_hasRead || !widget.isActive || result.value.isEmpty) return;
 
-    // O preview simulado continua compatÃ­vel com os testes existentes.
+    // O preview simulado continua compatível com os testes existentes.
     if (!_usesTestPreview && !_cameraEnabled) return;
 
     _hasRead = true;
@@ -217,7 +217,7 @@ class _QrScanPageState extends State<QrScanPage> {
       _cameraEnabled = false;
     });
 
-    // Interrompe a cÃ¢mera assim que o cÃ³digo Ã© reconhecido.
+    // Interrompe a câmera assim que o código é reconhecido.
     unawaited(_stopCamera());
 
     if (widget.repository != null) {
@@ -243,8 +243,8 @@ class _QrScanPageState extends State<QrScanPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'A leitura foi exibida, mas nÃ£o foi possÃ­vel '
-            'salvÃ¡-la no histÃ³rico.',
+            'A leitura foi exibida, mas não foi possível '
+            'salvá-la no histórico.',
           ),
         ),
       );
@@ -268,11 +268,11 @@ class _QrScanPageState extends State<QrScanPage> {
   String _messageForScannerError(MobileScannerException error) {
     return switch (error.errorCode) {
       MobileScannerErrorCode.permissionDenied =>
-        'A permissÃ£o da cÃ¢mera foi negada. Autorize o acesso '
-            'nas configuraÃ§Ãµes do aplicativo ou navegador e tente novamente.',
+        'A permissão da câmera foi negada. Autorize o acesso '
+            'nas configurações do aplicativo ou navegador e tente novamente.',
       MobileScannerErrorCode.unsupported =>
-        'Nenhuma cÃ¢mera compatÃ­vel foi encontrada. '
-            'Conecte ou habilite uma cÃ¢mera e tente novamente.',
+        'Nenhuma câmera compatível foi encontrada. '
+            'Conecte ou habilite uma câmera e tente novamente.',
       _ => _messageForStartError(error),
     };
   }
@@ -283,26 +283,26 @@ class _QrScanPageState extends State<QrScanPage> {
     if (message.contains('permission') ||
         message.contains('notallowederror') ||
         message.contains('denied')) {
-      return 'O acesso Ã  cÃ¢mera foi negado. Permita o uso '
-          'da cÃ¢mera nas configuraÃ§Ãµes do navegador ou aplicativo.';
+      return 'O acesso à câmera foi negado. Permita o uso '
+          'da câmera nas configurações do navegador ou aplicativo.';
     }
 
     if (message.contains('notfounderror') ||
         message.contains('no camera') ||
         message.contains('camera not found')) {
-      return 'Nenhuma cÃ¢mera foi encontrada. Conecte uma webcam '
-          'ou habilite a cÃ¢mera do dispositivo.';
+      return 'Nenhuma câmera foi encontrada. Conecte uma webcam '
+          'ou habilite a câmera do dispositivo.';
     }
 
     if (message.contains('notreadableerror') ||
         message.contains('could not start video source') ||
         message.contains('in use')) {
-      return 'A cÃ¢mera estÃ¡ indisponÃ­vel ou sendo usada por outro '
-          'aplicativo. Feche os outros aplicativos que utilizam a cÃ¢mera.';
+      return 'A câmera está indisponível ou sendo usada por outro '
+          'aplicativo. Feche os outros aplicativos que utilizam a câmera.';
     }
 
-    return 'NÃ£o foi possÃ­vel iniciar a cÃ¢mera. Verifique as permissÃµes '
-        'e se outro aplicativo estÃ¡ utilizando a cÃ¢mera.';
+    return 'Não foi possível iniciar a câmera. Verifique as permissões '
+        'e se outro aplicativo está utilizando a câmera.';
   }
 
   String _formatLabel(BarcodeFormat format) => switch (format) {
@@ -317,7 +317,7 @@ class _QrScanPageState extends State<QrScanPage> {
     BarcodeFormat.codabar => 'Codabar',
     // ignore: deprecated_member_use
     BarcodeFormat.itf => 'ITF',
-    _ => 'CÃ³digo de barras',
+    _ => 'Código de barras',
   };
 
   Future<void> _copyResult() async {
@@ -392,8 +392,7 @@ class _QrScanPageState extends State<QrScanPage> {
                 Text('Ler código', style: textTheme.headlineMedium),
                 const SizedBox(height: 8),
                 Text(
-                  'Leia QR Codes e cÃ³digos de barras. '
-                  'A cÃ¢mera sÃ³ serÃ¡ iniciada quando vocÃª solicitar.',
+                  'Aponte a câmera para um QR Code ou código de barras.',
                   style: textTheme.bodyLarge,
                 ),
                 const SizedBox(height: 16),
@@ -409,7 +408,7 @@ class _QrScanPageState extends State<QrScanPage> {
                           const SizedBox(height: 12),
                           const Center(
                             child: CircularProgressIndicator(
-                              semanticsLabel: 'Iniciando a cÃ¢mera',
+                              semanticsLabel: 'Iniciando a câmera',
                             ),
                           ),
                         ],
@@ -447,8 +446,7 @@ class _QrScanPageState extends State<QrScanPage> {
                           const _MessageCard(
                             icon: Icons.center_focus_strong_rounded,
                             message:
-                                'Mantenha o cÃ³digo dentro da Ã¡rea da cÃ¢mera. '
-                                'A leitura serÃ¡ interrompida apÃ³s o reconhecimento.',
+                                'Posicione o código na área da câmera para fazer a leitura.',
                           ),
                           const SizedBox(height: 8),
                           _buildCameraActions(),
@@ -469,8 +467,7 @@ class _QrScanPageState extends State<QrScanPage> {
     if (!kIsWeb) return const SizedBox.shrink();
 
     return Text(
-      'No navegador, permita o acesso Ã  cÃ¢mera. O site precisa estar em HTTPS '
-      'ou em um contexto seguro compatÃ­vel, como localhost.',
+      'Permita o acesso à câmera quando o navegador solicitar.',
       key: const ValueKey('qr-scan-web-permission-hint'),
       style: textTheme.bodySmall,
     );
@@ -501,9 +498,7 @@ class _QrScanPageState extends State<QrScanPage> {
                 key: ValueKey('qr-scan-platform-limit'),
                 icon: Icons.info_outline_rounded,
                 message:
-                    'A cÃ¢mera nÃ£o estÃ¡ disponÃ­vel no executÃ¡vel '
-                    'Windows. Use o aplicativo Android ou a versÃ£o '
-                    'Web do QR Ops para utilizar uma cÃ¢mera.',
+                    'A leitura pela câmera não está disponível nesta versão do Windows. Use o QR Ops no navegador ou em um dispositivo compatível.',
               )
             : MobileScanner(
                 controller: _controller,
@@ -563,14 +558,14 @@ class _QrScanPageState extends State<QrScanPage> {
                 key: const ValueKey('qr-scan-cancel-start'),
                 onPressed: _stopScanning,
                 icon: const Icon(Icons.close_rounded),
-                label: const Text('Cancelar inicializaÃ§Ã£o'),
+                label: const Text('Cancelar inicialização'),
               )
             else if (_cameraEnabled)
               FilledButton.icon(
                 key: const ValueKey('qr-scan-stop'),
                 onPressed: _stopScanning,
                 icon: const Icon(Icons.stop_circle_outlined),
-                label: const Text('Parar cÃ¢mera'),
+                label: const Text('Parar câmera'),
               )
             else
               FilledButton.icon(
@@ -578,7 +573,7 @@ class _QrScanPageState extends State<QrScanPage> {
                 onPressed: _startScanning,
                 icon: const Icon(Icons.camera_alt_outlined),
                 label: Text(
-                  _usesTestPreview ? 'Ativar leitor' : 'Ativar cÃ¢mera',
+                  _usesTestPreview ? 'Ativar leitor' : 'Ativar câmera',
                 ),
               ),
             if (_cameraEnabled && !_usesTestPreview && cameraCount > 1)

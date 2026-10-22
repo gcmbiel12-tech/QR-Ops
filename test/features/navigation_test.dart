@@ -41,10 +41,9 @@ void main() {
         await tester.pumpWidget(QrOpsApp(repository: repository));
 
         expect(find.byType(NavigationRail), findsOneWidget);
-        expect(
-          find.text('Sua base para operações com códigos QR.'),
-          findsOneWidget,
-        );
+        expect(find.text('Tudo pronto para o próximo passo.'), findsOneWidget);
+        expect(find.text('Site ou link'), findsNothing);
+        expect(find.text('Acesso rápido'), findsOneWidget);
 
         await tester.tap(find.byKey(const ValueKey('nav-criar')));
         await tester.pumpAndSettle();
@@ -77,10 +76,8 @@ void main() {
 
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.byType(NavigationRail), findsNothing);
-    expect(
-      find.text('Sua base para operações com códigos QR.'),
-      findsOneWidget,
-    );
+    expect(find.text('Tudo pronto para o próximo passo.'), findsOneWidget);
+    expect(find.text('Site ou link'), findsNothing);
   });
 
   testWidgets('creates a QR and exposes it in the local history', (

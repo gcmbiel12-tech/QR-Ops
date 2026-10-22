@@ -1,6 +1,9 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:qr/qr.dart' as qr;
 
 import 'qr_code_download.dart';
@@ -44,12 +47,19 @@ class _QrCreatePageState extends State<QrCreatePage> {
     'Marfim': Color(0xFFFFFDF5),
   };
 
+  static const _visibleTypes = <QrContentType>[
+    QrContentType.text,
+    QrContentType.url,
+    QrContentType.phone,
+    QrContentType.email,
+    QrContentType.wifi,
+  ];
+
   static const _descriptions = <QrContentType, String>{
     QrContentType.text: 'Compartilhe textos e informações.',
     QrContentType.url: 'Direcione para um site.',
     QrContentType.phone: 'Facilite o contato por telefone.',
     QrContentType.email: 'Prepare um e-mail com assunto e mensagem.',
-    QrContentType.sms: 'Compartilhe uma mensagem SMS.',
     QrContentType.wifi: 'Compartilhe o acesso à rede Wi-Fi.',
   };
 
@@ -58,7 +68,6 @@ class _QrCreatePageState extends State<QrCreatePage> {
     QrContentType.url: Icons.language,
     QrContentType.phone: Icons.phone,
     QrContentType.email: Icons.email_outlined,
-    QrContentType.sms: Icons.sms_outlined,
     QrContentType.wifi: Icons.wifi,
   };
 
@@ -75,6 +84,11 @@ class _QrCreatePageState extends State<QrCreatePage> {
   bool _hiddenNetwork = false;
   String _foregroundName = 'Preto';
   String _backgroundName = 'Branco';
+  int _pngResolution = 1024;
+  Uint8List? _customLogoBytes;
+  double _logoFraction = 0.12;
+  bool _logoLoading = false;
+  static const _savedLogoKey = 'qr_ops_custom_logo_base64_v1';
 
   qr.QrImage? _preview;
   String? _validationMessage;
@@ -91,6 +105,100 @@ class _QrCreatePageState extends State<QrCreatePage> {
     _valueController = TextEditingController();
     _secondaryController = TextEditingController();
     _tertiaryController = TextEditingController();
+    _loadSavedLogo();
+  }
+
+  Future<void> _loadSavedLogo() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final encoded = preferences.getString(_savedLogoKey);
+      if (!mounted || encoded == null) return;
+      final bytes = base64Decode(encoded);
+      if (_isSupportedImage(bytes)) setState(() => _customLogoBytes = bytes);
+    } on Object {
+      // A corrupt or unavailable preference must not prevent QR creation.
+    }
+  }
+
+  bool _isSupportedImage(Uint8List bytes) {
+    final png =
+        bytes.length >= 8 &&
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47 &&
+        bytes[4] == 0x0D &&
+        bytes[5] == 0x0A &&
+        bytes[6] == 0x1A &&
+        bytes[7] == 0x0A;
+    final jpeg =
+        bytes.length >= 3 &&
+        bytes[0] == 0xFF &&
+        bytes[1] == 0xD8 &&
+        bytes[2] == 0xFF;
+    final webp =
+        bytes.length >= 12 &&
+        bytes[0] == 0x52 &&
+        bytes[1] == 0x49 &&
+        bytes[2] == 0x46 &&
+        bytes[3] == 0x46 &&
+        bytes[8] == 0x57 &&
+        bytes[9] == 0x45 &&
+        bytes[10] == 0x42 &&
+        bytes[11] == 0x50;
+    return png || jpeg || webp;
+  }
+
+  Future<void> _pickCustomLogo() async {
+    if (_logoLoading) return;
+    setState(() => _logoLoading = true);
+    try {
+      final file = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 90,
+      );
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      if (bytes.length > 1024 * 1024 || !_isSupportedImage(bytes)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Use uma imagem PNG, JPEG ou WebP de até 1 MB.'),
+            ),
+          );
+        }
+        return;
+      }
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString(_savedLogoKey, base64Encode(bytes));
+      if (mounted) setState(() => _customLogoBytes = bytes);
+    } on Object {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Não foi possível carregar a imagem.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _logoLoading = false);
+    }
+  }
+
+  Future<void> _restoreDefaultLogo() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.remove(_savedLogoKey);
+      if (mounted) setState(() => _customLogoBytes = null);
+    } on Object {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Não foi possível restaurar a logo padrão.'),
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -184,8 +292,16 @@ class _QrCreatePageState extends State<QrCreatePage> {
     });
 
     try {
-      final export = widget.pngExportHandler ?? const QrPngExporter().export;
-      final bytes = await export(preview);
+      final bytes = widget.pngExportHandler != null
+          ? await widget.pngExportHandler!(preview)
+          : await const QrPngExporter().export(
+              preview,
+              dimension: _pngResolution,
+              foreground: _foregrounds[_foregroundName]!,
+              background: _backgrounds[_backgroundName]!,
+              logoBytes: _customLogoBytes,
+              logoFraction: _customLogoBytes == null ? 0.14 : _logoFraction,
+            );
       final download = widget.downloadHandler ?? downloadQrCodePng;
       await download(bytes, filename: 'qr-code.png');
     } on Object {
@@ -408,35 +524,150 @@ class _QrCreatePageState extends State<QrCreatePage> {
   }
 
   Widget _buildTypeSelection(TextTheme textTheme) {
+    final colors = Theme.of(context).colorScheme;
+
     return SafeArea(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 600),
+            constraints: const BoxConstraints(maxWidth: 760),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text('Criar QR Code', style: textTheme.headlineMedium),
                 const SizedBox(height: 8),
-                const Text('Escolha o tipo de conteúdo do seu QR Code.'),
+                Text(
+                  'Escolha o que deseja compartilhar. O QR Code será montado '
+                  'com os dados que você informar.',
+                  style: textTheme.bodyLarge?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
                 const SizedBox(height: 24),
-                for (final type in QrContentType.values) ...[
-                  Card(
-                    child: ListTile(
-                      key: ValueKey('qr-type-${type.name}'),
-                      leading: Icon(_icons[type], size: 30),
-                      title: Text(type.label),
-                      subtitle: Text(_descriptions[type]!),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () {
-                        _changeType(type);
-                        setState(() => _typeSelected = true);
-                      },
+                Card(
+                  color: colors.primaryContainer,
+                  clipBehavior: Clip.antiAlias,
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.qr_code_2_rounded,
+                          size: 40,
+                          color: colors.onPrimaryContainer,
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Comece por um modelo',
+                                style: textTheme.titleLarge?.copyWith(
+                                  color: colors.onPrimaryContainer,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Selecione uma opção abaixo para preencher '
+                                'os detalhes.',
+                                style: textTheme.bodyMedium?.copyWith(
+                                  color: colors.onPrimaryContainer,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 8),
-                ],
+                ),
+                const SizedBox(height: 24),
+                Text('Modelos de QR Code', style: textTheme.titleLarge),
+                const SizedBox(height: 12),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final columns = constraints.maxWidth >= 560 ? 2 : 1;
+                    const spacing = 12.0;
+                    final cardWidth =
+                        (constraints.maxWidth - spacing * (columns - 1)) /
+                        columns;
+
+                    return Wrap(
+                      spacing: spacing,
+                      runSpacing: spacing,
+                      children: [
+                        for (final type in _visibleTypes)
+                          SizedBox(
+                            width: cardWidth,
+                            child: Card(
+                              clipBehavior: Clip.antiAlias,
+                              child: InkWell(
+                                key: ValueKey('qr-type-${type.name}'),
+                                onTap: () {
+                                  _changeType(type);
+                                  setState(() => _typeSelected = true);
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Container(
+                                        width: 44,
+                                        height: 44,
+                                        decoration: BoxDecoration(
+                                          color: colors.secondaryContainer,
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        alignment: Alignment.center,
+                                        child: Icon(
+                                          _icons[type],
+                                          color: colors.onSecondaryContainer,
+                                          size: 24,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              type.label,
+                                              style: textTheme.titleMedium
+                                                  ?.copyWith(
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                            ),
+                                          ),
+                                          Icon(
+                                            Icons.arrow_forward_rounded,
+                                            size: 18,
+                                            color: colors.onSurfaceVariant,
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        _descriptions[type]!,
+                                        style: textTheme.bodyMedium?.copyWith(
+                                          color: colors.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
               ],
             ),
           ),
@@ -527,7 +758,107 @@ class _QrCreatePageState extends State<QrCreatePage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  key: const ValueKey('qr-png-resolution'),
+                  initialValue: _pngResolution,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    labelText: 'Resolução do PNG',
+                    helperText: 'Define as dimensões do arquivo exportado.',
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 256, child: Text('256 × 256 px')),
+                    DropdownMenuItem(value: 512, child: Text('512 × 512 px')),
+                    DropdownMenuItem(
+                      value: 1024,
+                      child: Text('1024 × 1024 px'),
+                    ),
+                    DropdownMenuItem(
+                      value: 2048,
+                      child: Text('2048 × 2048 px'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) setState(() => _pngResolution = value);
+                  },
+                ),
+                const SizedBox(height: 8),
+                ExpansionTile(
+                  key: const ValueKey('qr-logo-settings'),
+                  tilePadding: EdgeInsets.zero,
+                  title: const Text('Logo central'),
+                  subtitle: Text(
+                    _customLogoBytes == null
+                        ? 'Logo padrão QR Ops'
+                        : 'Logo personalizada',
+                  ),
+                  leading: SizedBox.square(
+                    dimension: 40,
+                    child: _customLogoBytes == null
+                        ? Image.asset(
+                            'web/icons/Icon-512.png',
+                            fit: BoxFit.contain,
+                          )
+                        : Image.memory(_customLogoBytes!, fit: BoxFit.contain),
+                  ),
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        onPressed: _logoLoading ? null : _pickCustomLogo,
+                        icon: _logoLoading
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.image_outlined),
+                        label: Text(
+                          _logoLoading ? 'Carregando...' : 'Escolher logo',
+                        ),
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: _customLogoBytes == null
+                            ? null
+                            : _restoreDefaultLogo,
+                        icon: const Icon(Icons.restore),
+                        label: const Text('Restaurar logo padrão'),
+                      ),
+                    ),
+                    if (_customLogoBytes != null)
+                      Row(
+                        children: [
+                          const Text('Tamanho da logo carregada'),
+                          Expanded(
+                            child: Slider(
+                              value: _logoFraction,
+                              min: 0.08,
+                              max: 0.14,
+                              divisions: 6,
+                              label: '${(_logoFraction * 100).round()}%',
+                              onChanged: (value) =>
+                                  setState(() => _logoFraction = value),
+                            ),
+                          ),
+                        ],
+                      ),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Padding(
+                        padding: EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          'PNG, JPEG ou WebP · até 1 MB · salvo neste dispositivo',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
                 FilledButton.icon(
                   key: const ValueKey('qr-create-button'),
                   onPressed: _saving ? null : _createQr,
@@ -541,6 +872,10 @@ class _QrCreatePageState extends State<QrCreatePage> {
                       image: preview,
                       foreground: _foregrounds[_foregroundName]!,
                       background: _backgrounds[_backgroundName]!,
+                      logoBytes: _customLogoBytes,
+                      logoFraction: _customLogoBytes == null
+                          ? 0.14
+                          : _logoFraction,
                     ),
                   ),
                   const SizedBox(height: 16),

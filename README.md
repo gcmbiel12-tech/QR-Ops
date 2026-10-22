@@ -70,3 +70,29 @@ Os valores dos secrets não devem ser colocados no código. O projeto Vercel, os
 Arquivos relacionados: `scripts/build_web.sh`, `vercel.json` e `.github/workflows/vercel-deploy.yml`.
 
 Consulte `ARCHITECTURE.md` para o fluxo técnico, `PROJECT_STATUS.md` para validações e limitações e `CHANGELOG.md` para as alterações recentes.
+
+## Configuração Supabase (integração em preparação)
+
+A configuração do cliente usa valores de build, sem armazenar credenciais no código:
+
+```powershell
+flutter run -d chrome --dart-define=SUPABASE_URL=https://SEU-PROJETO.supabase.co --dart-define=SUPABASE_PUBLISHABLE_KEY=SUA_CHAVE_PUBLICA
+```
+
+Use apenas a chave publishable/anon do projeto. Nunca use `service_role` no Flutter.
+A integração remota exige uma sessão autenticada; o repositório compartilhado recusa
+operações sem usuário autenticado. Até a tela/fluxo de autenticação e a configuração
+do projeto serem concluídos, o aplicativo continua inicializando os repositórios locais.
+
+
+## Integração Supabase (preparação)
+
+A camada de configuração lê os valores por build, sem gravar credenciais no repositório:
+
+```powershell
+flutter run -d chrome --dart-define=SUPABASE_URL=https://SEU-PROJETO.supabase.co --dart-define=SUPABASE_PUBLISHABLE_KEY=SUA_CHAVE_PUBLICA
+```
+
+Use somente a chave pública/publishable (ou anon legado) do projeto. Nunca distribua a chave `service_role` no Flutter. O repositório `SupabaseQrRecordRepository` exige uma sessão Supabase autenticada e utiliza a tabela `qr_records` com as políticas RLS da migração em `supabase/migrations/`.
+
+A conexão ainda não está ativada no bootstrap: é necessário configurar um projeto Supabase real, aplicar a migração e implementar a tela/fluxo de autenticação antes de substituir o repositório local. SQLite e IndexedDB continuam sendo usados pelo aplicativo atual.

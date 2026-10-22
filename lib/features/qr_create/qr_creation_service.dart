@@ -156,12 +156,12 @@ class QrCreationService {
         return QrImage(
           QrCode(
             payload: utf8Payload,
-            errorCorrectLevel: QrErrorCorrectLevel.medium,
+            errorCorrectLevel: QrErrorCorrectLevel.high,
           ),
         );
       }
       return QrImage(
-        QrCode(payload: payload, errorCorrectLevel: QrErrorCorrectLevel.medium),
+        QrCode(payload: payload, errorCorrectLevel: QrErrorCorrectLevel.high),
       );
     } on InputTooLongException {
       throw const QrContentException(QrContentProblem.tooLong);
