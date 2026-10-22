@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import 'qr_code_download.dart';
 import 'qr_code_preview.dart';
 import 'qr_png_exporter.dart';
 import 'qr_creation_service.dart';
+import 'qr_visual_config.dart';
 
 typedef QrPngDownloadHandler = Future<void> Function(
   Uint8List bytes, {
@@ -38,12 +40,16 @@ class QrCreatePage extends StatefulWidget {
 class _QrCreatePageState extends State<QrCreatePage> {
   static const _foregrounds = <String, Color>{
     'Preto': Color(0xFF000000),
-    'Azul': Color(0xFF102A43),
-    'Verde': Color(0xFF174D36),
+    'Azul corporativo': Color(0xFF12345A),
+    'Azul': Color(0xFF0756A5),
+    'Roxo': Color(0xFF542078),
+    'Verde': Color(0xFF14532D),
+    'Grafite': Color(0xFF292524),
   };
 
   static const _backgrounds = <String, Color>{
     'Branco': Color(0xFFFFFFFF),
+    'Rosa claro': Color(0xFFFFF5FA),
     'Marfim': Color(0xFFFFFDF5),
   };
 
@@ -53,6 +59,7 @@ class _QrCreatePageState extends State<QrCreatePage> {
     QrContentType.phone,
     QrContentType.email,
     QrContentType.wifi,
+    QrContentType.whatsapp,
   ];
 
   static const _descriptions = <QrContentType, String>{
@@ -61,6 +68,8 @@ class _QrCreatePageState extends State<QrCreatePage> {
     QrContentType.phone: 'Facilite o contato por telefone.',
     QrContentType.email: 'Prepare um e-mail com assunto e mensagem.',
     QrContentType.wifi: 'Compartilhe o acesso à rede Wi-Fi.',
+    QrContentType.whatsapp:
+        'Abra uma conversa com mensagem opcional pré-preenchida.',
   };
 
   static const _icons = <QrContentType, IconData>{
@@ -69,6 +78,7 @@ class _QrCreatePageState extends State<QrCreatePage> {
     QrContentType.phone: Icons.phone,
     QrContentType.email: Icons.email_outlined,
     QrContentType.wifi: Icons.wifi,
+    QrContentType.whatsapp: Icons.chat,
   };
 
   late final TextEditingController _valueController;
@@ -84,6 +94,13 @@ class _QrCreatePageState extends State<QrCreatePage> {
   bool _hiddenNetwork = false;
   String _foregroundName = 'Preto';
   String _backgroundName = 'Branco';
+  Color _foregroundColor = const Color(0xFF000000);
+  Color _backgroundColor = const Color(0xFFFFFFFF);
+  String _selectedModelId = 'creator-clean';
+  QrFrameStyle _frame = QrFrameStyle.none;
+  String _callToAction = '';
+  String _foregroundHexInput = '#000000';
+  String _backgroundHexInput = '#FFFFFF';
   int _pngResolution = 1024;
   Uint8List? _customLogoBytes;
   double _logoFraction = 0.12;
@@ -282,6 +299,206 @@ class _QrCreatePageState extends State<QrCreatePage> {
     }
   }
 
+  void _applyModel(QrVisualModel model) {
+    final palette = QrVisualLibrary.palette(model.paletteId);
+    final foregroundName = _foregrounds.entries
+        .where((entry) => entry.value == palette.foreground)
+        .firstOrNull
+        ?.key;
+    final backgroundName = _backgrounds.entries
+        .where((entry) => entry.value == palette.background)
+        .firstOrNull
+        ?.key;
+    setState(() {
+      _selectedModelId = model.id;
+      if (foregroundName != null) _foregroundName = foregroundName;
+      if (backgroundName != null) _backgroundName = backgroundName;
+      _foregroundColor = palette.foreground;
+      _backgroundColor = palette.background;
+      _foregroundHexInput = _hexColor(palette.foreground);
+      _backgroundHexInput = _hexColor(palette.background);
+      _frame = model.frame;
+      _callToAction = '';
+    });
+  }
+
+  String _hexColor(Color color) =>
+      '#${color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
+
+  Color? _parseHexColor(String value) {
+    final normalized = value.trim().replaceFirst('#', '');
+    if (!RegExp(r'^[0-9a-fA-F]{6}$').hasMatch(normalized)) return null;
+    return Color(0xFF000000 | int.parse(normalized, radix: 16))
+        .withValues(alpha: 1);
+  }
+
+  void _applyCustomColors() {
+    final foreground = _parseHexColor(_foregroundHexInput);
+    final background = _parseHexColor(_backgroundHexInput);
+    if (foreground == null || background == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Informe as cores no formato #RRGGBB.')),
+      );
+      return;
+    }
+    if (contrastRatio(foreground, background) < 4.5) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Contraste insuficiente. Use uma combinação com pelo menos 4,5:1.',
+          ),
+        ),
+      );
+      return;
+    }
+    final foregroundEntry = _foregrounds.entries
+        .where((entry) => entry.value == foreground)
+        .firstOrNull;
+    final backgroundEntry = _backgrounds.entries
+        .where((entry) => entry.value == background)
+        .firstOrNull;
+    setState(() {
+      _foregroundColor = foreground;
+      _backgroundColor = background;
+      _foregroundName = foregroundEntry?.key ?? 'Personalizada';
+      _backgroundName = backgroundEntry?.key ?? 'Personalizada';
+    });
+  }
+
+  Future<void> _pickColor({required bool foreground}) async {
+    final initial = foreground ? _foregroundColor : _backgroundColor;
+    final hsv = HSVColor.fromColor(initial);
+    var hue = hsv.hue;
+    var saturation = hsv.saturation;
+    var value = hsv.value;
+    final picked = await showDialog<Color>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, updateDialog) {
+          final color = HSVColor.fromAHSV(1, hue, saturation, value).toColor();
+          return AlertDialog(
+            title: Text(
+              foreground ? 'Escolher cor do QR' : 'Escolher cor do fundo',
+            ),
+            content: SizedBox(
+              width: 320,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  GestureDetector(
+                    key: const ValueKey('qr-hue-wheel'),
+                    onPanDown: (details) => _updateWheel(
+                      details.localPosition,
+                      (h, s) => updateDialog(() {
+                        hue = h;
+                        saturation = s;
+                      }),
+                    ),
+                    onPanUpdate: (details) => _updateWheel(
+                      details.localPosition,
+                      (h, s) => updateDialog(() {
+                        hue = h;
+                        saturation = s;
+                      }),
+                    ),
+                    child: CustomPaint(
+                      size: const Size(220, 220),
+                      painter: _HueWheelPainter(
+                        hue: hue,
+                        saturation: saturation,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: color,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Theme.of(context).dividerColor,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(child: Text(_hexColor(color))),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const SizedBox(width: 74, child: Text('Luminosidade')),
+                      Expanded(
+                        child: Slider(
+                          value: value,
+                          min: 0.15,
+                          max: 1,
+                          onChanged: (next) => updateDialog(() => value = next),
+                        ),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    'Selecione a tonalidade no círculo e ajuste a luminosidade.',
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, color),
+                child: const Text('Usar esta cor'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (picked == null || !mounted) return;
+    if (foreground && contrastRatio(picked, _backgroundColor) < 4.5 ||
+        !foreground && contrastRatio(_foregroundColor, picked) < 4.5) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Essa combinação tem pouco contraste para leitura. Ajuste a outra cor e tente novamente.',
+          ),
+        ),
+      );
+      return;
+    }
+    setState(() {
+      if (foreground) {
+        _foregroundColor = picked;
+        _foregroundName = 'Personalizada';
+        _foregroundHexInput = _hexColor(picked);
+      } else {
+        _backgroundColor = picked;
+        _backgroundName = 'Personalizada';
+        _backgroundHexInput = _hexColor(picked);
+      }
+    });
+  }
+
+  void _updateWheel(
+    Offset position,
+    void Function(double hue, double saturation) update,
+  ) {
+    const center = 110.0;
+    final dx = position.dx - center;
+    final dy = position.dy - center;
+    final radius = math.sqrt(dx * dx + dy * dy);
+    if (radius > 108) return;
+    final hue = (math.atan2(dy, dx) * 180 / math.pi + 360) % 360;
+    update(hue, (radius / 108).clamp(0.12, 1.0));
+  }
+
   Future<void> _downloadPng() async {
     final preview = _preview;
     if (_downloading || preview == null) return;
@@ -297,10 +514,12 @@ class _QrCreatePageState extends State<QrCreatePage> {
           : await const QrPngExporter().export(
               preview,
               dimension: _pngResolution,
-              foreground: _foregrounds[_foregroundName]!,
-              background: _backgrounds[_backgroundName]!,
+              foreground: _foregroundColor,
+              background: _backgroundColor,
               logoBytes: _customLogoBytes,
               logoFraction: _customLogoBytes == null ? 0.14 : _logoFraction,
+              frame: _frame,
+              callToAction: _callToAction,
             );
       final download = widget.downloadHandler ?? downloadQrCodePng;
       await download(bytes, filename: 'qr-code.png');
@@ -441,6 +660,28 @@ class _QrCreatePageState extends State<QrCreatePage> {
         multiline: true,
       ),
     ],
+    QrContentType.whatsapp => [
+      _field(
+        controller: _valueController,
+        key: const ValueKey('qr-content-field-whatsapp-phone'),
+        label: 'Telefone do WhatsApp com código do país',
+        hint: '+55 11 99999-9999',
+        keyboardType: TextInputType.phone,
+      ),
+      _field(
+        controller: _secondaryController,
+        key: const ValueKey('qr-content-field-whatsapp-message'),
+        label: 'Mensagem pré-preenchida (opcional)',
+        hint: 'Olá! Gostaria de mais informações.',
+        multiline: true,
+      ),
+      const Padding(
+        padding: EdgeInsets.only(top: 8),
+        child: Text(
+          'Use o telefone em formato internacional, incluindo + e código do país.',
+        ),
+      ),
+    ],
     QrContentType.wifi => [
       _field(
         controller: _valueController,
@@ -498,30 +739,6 @@ class _QrCreatePageState extends State<QrCreatePage> {
       ),
     ],
   };
-
-  Widget _colorDropdown({
-    required String label,
-    required String value,
-    required Map<String, Color> options,
-    required ValueChanged<String?> onChanged,
-  }) {
-    return Expanded(
-      child: DropdownButtonFormField<String>(
-        initialValue: value,
-        decoration: InputDecoration(
-          border: const OutlineInputBorder(),
-          labelText: label,
-        ),
-        items: options.entries
-            .map(
-              (entry) =>
-                  DropdownMenuItem(value: entry.key, child: Text(entry.key)),
-            )
-            .toList(),
-        onChanged: onChanged,
-      ),
-    );
-  }
 
   Widget _buildTypeSelection(TextTheme textTheme) {
     final colors = Theme.of(context).colorScheme;
@@ -733,31 +950,433 @@ class _QrCreatePageState extends State<QrCreatePage> {
                   ),
                 ],
                 const SizedBox(height: 20),
-                Text('Aparência', style: textTheme.titleMedium),
-                const SizedBox(height: 8),
+                Text('Modelos visuais', style: textTheme.titleMedium),
+                const SizedBox(height: 4),
+                const Text(
+                  'Escolha um estilo. O conteúdo preenchido será preservado.',
+                ),
+                const SizedBox(height: 12),
+                for (final category in QrVisualCategory.values) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8, bottom: 6),
+                    child: Text(category.label, style: textTheme.titleSmall),
+                  ),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final model in QrVisualLibrary.models.where(
+                        (item) => item.category == category,
+                      ))
+                        SizedBox(
+                          width: 250,
+                          child: Card(
+                            margin: EdgeInsets.zero,
+                            clipBehavior: Clip.antiAlias,
+                            child: InkWell(
+                              key: ValueKey('qr-model-${model.id}'),
+                              onTap: () => _applyModel(model),
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 34,
+                                      height: 34,
+                                      decoration: BoxDecoration(
+                                        color: QrVisualLibrary.palette(
+                                          model.paletteId,
+                                        ).background,
+                                        border: Border.all(
+                                          color: QrVisualLibrary.palette(
+                                            model.paletteId,
+                                          ).foreground,
+                                          width: 2,
+                                        ),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Icon(
+                                        Icons.qr_code_2,
+                                        color: QrVisualLibrary.palette(
+                                          model.paletteId,
+                                        ).foreground,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            model.name,
+                                            style: textTheme.labelLarge,
+                                          ),
+                                          Text(
+                                            model.description,
+                                            style: textTheme.bodySmall,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (_selectedModelId == model.id)
+                                      const Icon(
+                                        Icons.check_circle,
+                                        color: Colors.green,
+                                        size: 20,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  key: const ValueKey('qr-style-reset'),
+                  onPressed: () =>
+                      _applyModel(QrVisualLibrary.model('creator-clean')),
+                  icon: const Icon(Icons.restart_alt),
+                  label: const Text('Voltar ao estilo padrão'),
+                ),
+                const SizedBox(height: 20),
+                Text('Personalizar', style: textTheme.titleMedium),
+                const SizedBox(height: 12),
+                Card(
+                  key: const ValueKey('qr-color-personalization-banner'),
+                  margin: EdgeInsets.zero,
+                  clipBehavior: Clip.antiAlias,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Theme.of(context).colorScheme.primaryContainer,
+                          Theme.of(context).colorScheme.secondaryContainer,
+                        ],
+                      ),
+                    ),
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surface
+                                .withValues(alpha: .82),
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                          child: Icon(
+                            Icons.palette_rounded,
+                            size: 28,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'Crie uma paleta só sua',
+                                      style: textTheme.titleMedium?.copyWith(
+                                        fontWeight: FontWeight.w800,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onPrimaryContainer,
+                                      ),
+                                    ),
+                                  ),
+                                  Icon(
+                                    Icons.auto_awesome_rounded,
+                                    size: 19,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onPrimaryContainer,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                'Escolha cada tonalidade na roda de cores ou '
+                                'digite seus códigos HEX para combinar com '
+                                'sua marca, perfil ou evento.',
+                                style: textTheme.bodyMedium?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onPrimaryContainer,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: [
+                                  _ColorFeatureTag(
+                                    icon: Icons.color_lens_outlined,
+                                    label: 'Roda cromática',
+                                  ),
+                                  _ColorFeatureTag(
+                                    icon: Icons.tag_rounded,
+                                    label: 'Código HEX',
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
                 Row(
                   children: [
-                    _colorDropdown(
-                      label: 'Cor do código',
-                      value: _foregroundName,
-                      options: _foregrounds,
-                      onChanged: (value) {
-                        if (value == null) return;
-                        setState(() => _foregroundName = value);
-                      },
+                    const Icon(Icons.auto_awesome, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Paletas prontas',
+                        style: textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
-                    const SizedBox(width: 12),
-                    _colorDropdown(
-                      label: 'Fundo',
-                      value: _backgroundName,
-                      options: _backgrounds,
-                      onChanged: (value) {
-                        if (value == null) return;
-                        setState(() => _backgroundName = value);
-                      },
+                    Text(
+                      '1 toque',
+                      style: textTheme.labelMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (final palette in QrVisualLibrary.palettes)
+                      Tooltip(
+                        message: palette.name,
+                        child: InkWell(
+                          key: ValueKey('qr-palette-${palette.id}'),
+                          customBorder: const CircleBorder(),
+                          onTap: () {
+                            setState(() {
+                              _foregroundColor = palette.foreground;
+                              _backgroundColor = palette.background;
+                              _foregroundName = palette.name;
+                              _backgroundName = palette.name;
+                              _foregroundHexInput = _hexColor(
+                                palette.foreground,
+                              );
+                              _backgroundHexInput = _hexColor(
+                                palette.background,
+                              );
+                            });
+                          },
+                          child: Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  palette.foreground,
+                                  palette.foreground,
+                                  palette.background,
+                                  palette.background,
+                                ],
+                                stops: const [0, .48, .52, 1],
+                              ),
+                              border: Border.all(
+                                color:
+                                    _foregroundColor == palette.foreground &&
+                                        _backgroundColor == palette.background
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Theme.of(context).dividerColor,
+                                width:
+                                    _foregroundColor == palette.foreground &&
+                                        _backgroundColor == palette.background
+                                    ? 3
+                                    : 1,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    const Icon(Icons.tune_rounded, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Personalize manualmente',
+                        style: textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      'Seu estilo',
+                      style: textTheme.labelMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Toque em uma cor para abrir a roda cromática. Você também '
+                  'pode informar o código exato da sua identidade visual.',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  children: [
+                    OutlinedButton.icon(
+                      key: const ValueKey('qr-pick-foreground'),
+                      onPressed: () => _pickColor(foreground: true),
+                      icon: Container(
+                        width: 18,
+                        height: 18,
+                        decoration: BoxDecoration(
+                          color: _foregroundColor,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Theme.of(context).dividerColor,
+                          ),
+                        ),
+                      ),
+                      label: Text(
+                        'Cor do QR ($_foregroundName) ${_hexColor(_foregroundColor)}',
+                      ),
+                    ),
+                    OutlinedButton.icon(
+                      key: const ValueKey('qr-pick-background'),
+                      onPressed: () => _pickColor(foreground: false),
+                      icon: Container(
+                        width: 18,
+                        height: 18,
+                        decoration: BoxDecoration(
+                          color: _backgroundColor,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Theme.of(context).dividerColor,
+                          ),
+                        ),
+                      ),
+                      label: Text(
+                        'Fundo ($_backgroundName) ${_hexColor(_backgroundColor)}',
+                      ),
+                    ),
+                  ],
+                ),
+                ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  title: const Text('Inserir cores por código HEX'),
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            key: ValueKey(
+                              'qr-foreground-hex-$_foregroundHexInput',
+                            ),
+                            initialValue: _foregroundHexInput,
+                            decoration: const InputDecoration(
+                              labelText: 'Cor do QR',
+                              border: OutlineInputBorder(),
+                              hintText: '#123456',
+                            ),
+                            onChanged: (value) => _foregroundHexInput = value,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextFormField(
+                            key: ValueKey(
+                              'qr-background-hex-$_backgroundHexInput',
+                            ),
+                            initialValue: _backgroundHexInput,
+                            decoration: const InputDecoration(
+                              labelText: 'Fundo',
+                              border: OutlineInputBorder(),
+                              hintText: '#FFFFFF',
+                            ),
+                            onChanged: (value) => _backgroundHexInput = value,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        key: const ValueKey('qr-apply-custom-colors'),
+                        onPressed: _applyCustomColors,
+                        icon: const Icon(Icons.color_lens_outlined),
+                        label: const Text('Aplicar cores HEX'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<QrFrameStyle>(
+                  isExpanded: true,
+                  key: ValueKey('qr-frame-style-${_frame.name}'),
+                  initialValue: _frame,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    labelText: 'Moldura e chamada para ação',
+                  ),
+                  items: [
+                    for (final frame in QrFrameStyle.values)
+                      DropdownMenuItem(value: frame, child: Text(frame.label)),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      _frame = value;
+                      _callToAction = '';
+                    });
+                  },
+                ),
+                if (_frame.hasCallToAction) ...[
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    key: ValueKey(
+                      'qr-frame-call-to-action-${_frame.name}-$_selectedModelId',
+                    ),
+                    initialValue: _callToAction,
+                    maxLength: 40,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      labelText: 'Texto da chamada para ação',
+                      helperText: 'O texto aparece abaixo do QR Code.',
+                    ),
+                    onChanged: (value) => setState(() => _callToAction = value),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
                   key: const ValueKey('qr-png-resolution'),
@@ -870,9 +1489,11 @@ class _QrCreatePageState extends State<QrCreatePage> {
                   Center(
                     child: QrCodePreview(
                       image: preview,
-                      foreground: _foregrounds[_foregroundName]!,
-                      background: _backgrounds[_backgroundName]!,
+                      foreground: _foregroundColor,
+                      background: _backgroundColor,
                       logoBytes: _customLogoBytes,
+                      frame: _frame,
+                      callToAction: _callToAction,
                       logoFraction: _customLogoBytes == null
                           ? 0.14
                           : _logoFraction,
@@ -935,4 +1556,78 @@ class _QrCreatePageState extends State<QrCreatePage> {
       ),
     );
   }
+}
+
+class _ColorFeatureTag extends StatelessWidget {
+  const _ColorFeatureTag({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: colors.surface.withValues(alpha: .72),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: colors.primary),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall
+                ?.copyWith(fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HueWheelPainter extends CustomPainter {
+  const _HueWheelPainter({required this.hue, required this.saturation});
+
+  final double hue;
+  final double saturation;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.shortestSide / 2 - 2;
+    for (var degree = 0; degree < 360; degree++) {
+      final paint = Paint()
+        ..color = HSVColor.fromAHSV(1, degree.toDouble(), 1, 1).toColor()
+        ..strokeWidth = 3
+        ..style = PaintingStyle.stroke;
+      final start = (degree - 90) * math.pi / 180;
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        start,
+        math.pi / 180 * 1.5,
+        false,
+        paint,
+      );
+    }
+    final selectedRadius = radius * saturation;
+    final point = Offset(
+      center.dx + math.cos(hue * math.pi / 180) * selectedRadius,
+      center.dy + math.sin(hue * math.pi / 180) * selectedRadius,
+    );
+    canvas.drawCircle(point, 8, Paint()..color = Colors.white);
+    canvas.drawCircle(
+      point,
+      6,
+      Paint()..color = HSVColor.fromAHSV(1, hue, saturation, 1).toColor(),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _HueWheelPainter oldDelegate) =>
+      oldDelegate.hue != hue || oldDelegate.saturation != saturation;
 }

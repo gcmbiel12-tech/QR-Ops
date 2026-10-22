@@ -133,6 +133,18 @@ void main() {
       service
           .compose(
             const QrContentDraft(
+              type: QrContentType.whatsapp,
+              value: '+55 (11) 99999-0000',
+              secondary: 'Olá! Quero saber mais sobre vocês.',
+            ),
+          )
+          .value,
+      'https://wa.me/5511999990000?text=Ol%C3%A1!%20Quero%20saber%20mais%20sobre%20voc%C3%AAs.',
+    );
+    expect(
+      service
+          .compose(
+            const QrContentDraft(
               type: QrContentType.wifi,
               value: 'Rede; operação',
               secondary: r'senha:123',

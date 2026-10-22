@@ -99,6 +99,7 @@ void main() {
 
     expect(find.byKey(const ValueKey('qr-preview')), findsNothing);
 
+    await tester.ensureVisible(find.byKey(const ValueKey('qr-create-button')));
     await tester.tap(find.byKey(const ValueKey('qr-create-button')));
     await tester.pumpAndSettle();
 

@@ -7,7 +7,9 @@ import 'package:qr_ops/app/qr_ops_app.dart';
 import 'package:qr_ops/domain/qr_record.dart';
 import 'package:qr_ops/domain/qr_record_repository.dart';
 import 'package:qr_ops/features/qr_create/qr_create_page.dart';
+import 'package:qr_ops/features/qr_create/qr_code_preview.dart';
 import 'package:qr_ops/features/qr_create/qr_creation_service.dart';
+import 'package:qr_ops/features/qr_create/qr_visual_config.dart';
 
 void main() {
   testWidgets('fits a phone browser and creates a local QR record', (
@@ -40,6 +42,7 @@ void main() {
     // O QR não deve aparecer antes de clicar em Criar QR.
     expect(find.byKey(const ValueKey('qr-preview')), findsNothing);
 
+    await tester.ensureVisible(find.byKey(const ValueKey('qr-create-button')));
     await tester.tap(find.byKey(const ValueKey('qr-create-button')));
     await tester.pumpAndSettle();
 
@@ -90,6 +93,7 @@ void main() {
       find.byKey(const ValueKey('qr-content-field-url')),
       'exemplo.com',
     );
+    await tester.ensureVisible(find.byKey(const ValueKey('qr-create-button')));
     await tester.tap(find.byKey(const ValueKey('qr-create-button')));
     await tester.pumpAndSettle();
 
@@ -112,6 +116,7 @@ void main() {
       find.byKey(const ValueKey('qr-content-field-url')),
       'https://example.com/%zz',
     );
+    await tester.ensureVisible(find.byKey(const ValueKey('qr-create-button')));
     await tester.tap(find.byKey(const ValueKey('qr-create-button')));
     await tester.pumpAndSettle();
 
@@ -170,6 +175,7 @@ void main() {
       find.byKey(const ValueKey('qr-content-field')),
       'Baixar sem salvar',
     );
+    await tester.ensureVisible(find.byKey(const ValueKey('qr-create-button')));
     await tester.tap(find.byKey(const ValueKey('qr-create-button')));
     await tester.pumpAndSettle();
 
@@ -238,6 +244,7 @@ void main() {
       find.byKey(const ValueKey('qr-content-field')),
       'Conteúdo válido',
     );
+    await tester.ensureVisible(find.byKey(const ValueKey('qr-create-button')));
     await tester.tap(find.byKey(const ValueKey('qr-create-button')));
     await tester.pumpAndSettle();
     await tester.ensureVisible(
@@ -283,6 +290,7 @@ void main() {
     // A criação deve ser explícita.
     expect(find.byKey(const ValueKey('qr-preview')), findsNothing);
 
+    await tester.ensureVisible(find.byKey(const ValueKey('qr-create-button')));
     await tester.tap(find.byKey(const ValueKey('qr-create-button')));
     await tester.pumpAndSettle();
 
@@ -295,6 +303,60 @@ void main() {
     expect(repository.records, hasLength(1));
     expect(repository.records.single.content, 'tel:+5511999990000');
     expect(repository.records.single.contentType, 'phone');
+  });
+
+  testWidgets('visual model changes style without changing entered content', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: QrCreatePage(
+            service: QrCreationService(_MemoryQrRecordRepository()),
+            onRecordCreated: () {},
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('qr-type-text')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('qr-content-field')),
+      'Conteúdo que deve ser preservado',
+    );
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('qr-model-creator-pop')),
+    );
+    await tester.tap(find.byKey(const ValueKey('qr-model-creator-pop')));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('qr-content-field')))
+          .controller!
+          .text,
+      'Conteúdo que deve ser preservado',
+    );
+
+    await tester.ensureVisible(find.byKey(const ValueKey('qr-create-button')));
+    await tester.ensureVisible(find.byKey(const ValueKey('qr-create-button')));
+    await tester.tap(find.byKey(const ValueKey('qr-create-button')));
+    await tester.pumpAndSettle();
+
+    final preview = tester.widget<QrCodePreview>(find.byType(QrCodePreview));
+    expect(preview.frame, QrFrameStyle.stars);
+    expect(preview.callToAction, '');
+    expect(
+      preview.foreground,
+      QrVisualLibrary.palette('purple-pink').foreground,
+    );
+    expect(find.byKey(const ValueKey('qr-preview')), findsOneWidget);
   });
 }
 

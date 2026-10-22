@@ -3,7 +3,7 @@ import 'package:qr/qr.dart';
 import '../../domain/qr_record.dart';
 import '../../domain/qr_record_repository.dart';
 
-enum QrContentType { text, url, phone, email, sms, wifi }
+enum QrContentType { text, url, phone, email, sms, wifi, whatsapp }
 
 extension QrContentTypeLabel on QrContentType {
   String get label => switch (this) {
@@ -13,6 +13,7 @@ extension QrContentTypeLabel on QrContentType {
     QrContentType.email => 'E-mail',
     QrContentType.sms => 'SMS',
     QrContentType.wifi => 'Wi-Fi',
+    QrContentType.whatsapp => 'WhatsApp',
   };
 
   String get storageValue => name;
@@ -119,6 +120,17 @@ class QrCreationService {
         if (draft.secondary.isNotEmpty) {
           content += '?body=${Uri.encodeComponent(draft.secondary)}';
         }
+        break;
+      case QrContentType.whatsapp:
+        final phone = _phone(value);
+        if (phone == null || !phone.startsWith('+')) {
+          throw const QrContentException(QrContentProblem.invalid);
+        }
+        final internationalNumber = phone.substring(1);
+        final message = draft.secondary.trim();
+        content =
+            'https://wa.me/$internationalNumber'
+            '${message.isEmpty ? '' : '?text=${Uri.encodeComponent(message)}'}';
         break;
       case QrContentType.wifi:
         final ssid = draft.value;

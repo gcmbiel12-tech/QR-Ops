@@ -7,6 +7,10 @@ class QrOpsPlanCapabilities {
     required this.adFree,
     required this.pngResolutions,
     required this.enabledContentTypes,
+    required this.customVisualColors,
+    required this.visualModelIds,
+    required this.visualPaletteIds,
+    required this.visualFrames,
     this.monthlyCreationQuota,
     this.localHistoryLimit,
   });
@@ -15,6 +19,10 @@ class QrOpsPlanCapabilities {
   final bool adFree;
   final List<int> pngResolutions;
   final Set<String> enabledContentTypes;
+  final bool customVisualColors;
+  final Set<String> visualModelIds;
+  final Set<String> visualPaletteIds;
+  final Set<String> visualFrames;
   final int? monthlyCreationQuota;
   final int? localHistoryLimit;
 }
@@ -31,6 +39,48 @@ class QrOpsPlans {
     'phone',
     'email',
     'wifi',
+    'whatsapp',
+  };
+
+  static const basicVisualModels = <String>{
+    'creator-clean',
+    'business-blue',
+    'event-scan',
+  };
+  static const allVisualModels = <String>{
+    ...basicVisualModels,
+    'creator-pop',
+    'business-minimal',
+    'commerce-blue',
+    'commerce-green',
+    'event-contact',
+    'creator-floral',
+  };
+  static const basicVisualPalettes = <String>{
+    'classic',
+    'corporate-blue',
+    'blue-white',
+  };
+  static const allVisualPalettes = <String>{
+    ...basicVisualPalettes,
+    'purple-pink',
+    'green-white',
+    'minimal',
+    'berry',
+    'ocean',
+    'forest',
+    'sunset',
+    'lavender',
+    'charcoal',
+  };
+  static const basicVisualFrames = <String>{'none', 'simple', 'text'};
+  static const allVisualFrames = <String>{
+    ...basicVisualFrames,
+    'floral',
+    'botanical',
+    'stars',
+    'hearts',
+    'confetti',
   };
 
   static const free = QrOpsPlanCapabilities(
@@ -38,6 +88,10 @@ class QrOpsPlans {
     adFree: false,
     pngResolutions: pngResolutions,
     enabledContentTypes: supportedContentTypes,
+    customVisualColors: false,
+    visualModelIds: basicVisualModels,
+    visualPaletteIds: basicVisualPalettes,
+    visualFrames: basicVisualFrames,
     monthlyCreationQuota: null,
     localHistoryLimit: null,
   );
@@ -47,6 +101,10 @@ class QrOpsPlans {
     adFree: true,
     pngResolutions: pngResolutions,
     enabledContentTypes: supportedContentTypes,
+    customVisualColors: true,
+    visualModelIds: allVisualModels,
+    visualPaletteIds: allVisualPalettes,
+    visualFrames: allVisualFrames,
     monthlyCreationQuota: null,
     localHistoryLimit: null,
   );
