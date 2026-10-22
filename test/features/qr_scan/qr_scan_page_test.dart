@@ -41,6 +41,9 @@ void main() {
     expect(tester.widget<SelectableText>(resultFinder).data, value);
     await tester.tap(resultFinder);
     await tester.pumpAndSettle();
+    expect(find.text('Confirmar ação externa'), findsOneWidget);
+    await tester.tap(find.text('Continuar'));
+    await tester.pumpAndSettle();
     expect(launched, [Uri.parse(value)]);
 
     await tester.tap(find.byKey(const ValueKey('qr-scan-copy')));
@@ -99,6 +102,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('qr-scan-result-value')));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Continuar'));
+    await tester.pumpAndSettle();
 
     expect(
       find.text('Não foi possível abrir este link no navegador.'),
@@ -132,6 +137,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Formato: EAN-13'), findsOneWidget);
+    expect(find.text('Tipo identificado: Texto'), findsOneWidget);
+    expect(find.byKey(const ValueKey('qr-scan-context-action')), findsNothing);
     expect(find.byKey(const ValueKey('qr-scan-result-value')), findsOneWidget);
     expect(
       tester
@@ -163,6 +170,24 @@ void main() {
     );
   });
 
+  testWidgets('ignores detections while the reader area is inactive', (
+    tester,
+  ) async {
+    _setLargeTestViewport(tester);
+    await tester.pumpWidget(_testApp(isActive: false));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('fake-scan-once')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('qr-scan-result')), findsNothing);
+
+    await tester.pumpWidget(_testApp(isActive: true));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('fake-scan-once')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('qr-scan-result')), findsOneWidget);
+  });
+
   testWidgets('shows a recoverable camera error and offers retry', (
     tester,
   ) async {
@@ -191,68 +216,69 @@ void _setLargeTestViewport(WidgetTester tester) {
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 
-Widget _testApp({QrScanUrlLauncher? urlLauncher}) => MaterialApp(
-  home: Scaffold(
-    body: QrScanPage(
-      isActive: true,
-      urlLauncher: urlLauncher,
-      previewBuilder: (context, onResult, onError) => ColoredBox(
-        color: Colors.black12,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            TextButton(
-              key: const ValueKey('fake-scan-twice'),
-              onPressed: () {
-                const first = QrScanResult(
-                  value: '5901234123457',
-                  format: 'EAN-13',
-                );
-                onResult(first);
-                onResult(
-                  const QrScanResult(value: 'duplicate', format: 'EAN-13'),
-                );
-              },
-              child: const Text('Emitir duas detecções'),
-            ),
-            TextButton(
-              key: const ValueKey('fake-scan-url'),
-              onPressed: () => onResult(
-                const QrScanResult(
-                  value: 'https://example.com/rota?q=setor%201#inicio',
-                  format: 'QR Code',
+Widget _testApp({QrScanUrlLauncher? urlLauncher, bool isActive = true}) =>
+    MaterialApp(
+      home: Scaffold(
+        body: QrScanPage(
+          isActive: isActive,
+          urlLauncher: urlLauncher,
+          previewBuilder: (context, onResult, onError) => ColoredBox(
+            color: Colors.black12,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                TextButton(
+                  key: const ValueKey('fake-scan-twice'),
+                  onPressed: () {
+                    const first = QrScanResult(
+                      value: '5901234123457',
+                      format: 'EAN-13',
+                    );
+                    onResult(first);
+                    onResult(
+                      const QrScanResult(value: 'duplicate', format: 'EAN-13'),
+                    );
+                  },
+                  child: const Text('Emitir duas detecções'),
                 ),
-              ),
-              child: const Text('Emitir URL'),
-            ),
-            TextButton(
-              key: const ValueKey('fake-scan-once'),
-              onPressed: () => onResult(
-                const QrScanResult(value: 'ID-2', format: 'Code 128'),
-              ),
-              child: const Text('Emitir detecção'),
-            ),
-            TextButton(
-              key: const ValueKey('fake-scan-domain'),
-              onPressed: () => onResult(
-                const QrScanResult(
-                  value: 'exemplo.com/rota',
-                  format: 'QR Code',
+                TextButton(
+                  key: const ValueKey('fake-scan-url'),
+                  onPressed: () => onResult(
+                    const QrScanResult(
+                      value: 'https://example.com/rota?q=setor%201#inicio',
+                      format: 'QR Code',
+                    ),
+                  ),
+                  child: const Text('Emitir URL'),
                 ),
-              ),
-              child: const Text('Emitir domínio'),
+                TextButton(
+                  key: const ValueKey('fake-scan-once'),
+                  onPressed: () => onResult(
+                    const QrScanResult(value: 'ID-2', format: 'Code 128'),
+                  ),
+                  child: const Text('Emitir detecção'),
+                ),
+                TextButton(
+                  key: const ValueKey('fake-scan-domain'),
+                  onPressed: () => onResult(
+                    const QrScanResult(
+                      value: 'exemplo.com/rota',
+                      format: 'QR Code',
+                    ),
+                  ),
+                  child: const Text('Emitir domínio'),
+                ),
+                TextButton(
+                  key: const ValueKey('fake-camera-error'),
+                  onPressed: () => onError(
+                    'O acesso à câmera foi negado. Permita o acesso à câmera '
+                    'nas configurações e tente novamente.',
+                  ),
+                  child: const Text('Emitir erro'),
+                ),
+              ],
             ),
-            TextButton(
-              key: const ValueKey('fake-camera-error'),
-              onPressed: () => onError(
-                'O acesso à câmera foi negado. Permita o acesso à câmera '
-                'nas configurações e tente novamente.',
-              ),
-              child: const Text('Emitir erro'),
-            ),
-          ],
+          ),
         ),
       ),
-    ),
-  ),
-);
+    );

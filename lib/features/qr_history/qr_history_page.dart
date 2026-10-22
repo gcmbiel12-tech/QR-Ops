@@ -22,6 +22,8 @@ class QrHistoryPage extends StatefulWidget {
 class _QrHistoryPageState extends State<QrHistoryPage> {
   Future<List<QrRecord>>? _records;
   String? _error;
+  String _searchQuery = '';
+  QrRecordOperation? _operationFilter;
 
   @override
   void initState() {
@@ -110,7 +112,43 @@ class _QrHistoryPageState extends State<QrHistoryPage> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                Text('Os registros permanecem neste dispositivo.'),
+                const Text('Os registros permanecem neste dispositivo.'),
+                const SizedBox(height: 12),
+                TextField(
+                  key: const ValueKey('qr-history-search'),
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.search_rounded),
+                    labelText: 'Pesquisar conteúdo',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (value) =>
+                      setState(() => _searchQuery = value.trim().toLowerCase()),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<QrRecordOperation?>(
+                  key: const ValueKey('qr-history-filter'),
+                  initialValue: _operationFilter,
+                  decoration: const InputDecoration(
+                    labelText: 'Tipo de registro',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem<QrRecordOperation?>(
+                      value: null,
+                      child: Text('Todos'),
+                    ),
+                    DropdownMenuItem<QrRecordOperation?>(
+                      value: QrRecordOperation.create,
+                      child: Text('Criados'),
+                    ),
+                    DropdownMenuItem<QrRecordOperation?>(
+                      value: QrRecordOperation.read,
+                      child: Text('Lidos'),
+                    ),
+                  ],
+                  onChanged: (value) =>
+                      setState(() => _operationFilter = value),
+                ),
                 const SizedBox(height: 16),
                 if (_error case final error?)
                   Padding(
@@ -143,10 +181,31 @@ class _QrHistoryPageState extends State<QrHistoryPage> {
                           child: Text('Não foi possível carregar o histórico.'),
                         );
                       }
-                      final records = snapshot.data ?? const <QrRecord>[];
+                      final allRecords = snapshot.data ?? const <QrRecord>[];
+                      final records = allRecords
+                          .where((record) {
+                            final matchesText =
+                                _searchQuery.isEmpty ||
+                                record.content.toLowerCase().contains(
+                                  _searchQuery,
+                                ) ||
+                                record.symbology.toLowerCase().contains(
+                                  _searchQuery,
+                                ) ||
+                                record.contentType.toLowerCase().contains(
+                                  _searchQuery,
+                                );
+                            final matchesOperation =
+                                _operationFilter == null ||
+                                record.operation == _operationFilter;
+                            return matchesText && matchesOperation;
+                          })
+                          .toList(growable: false);
                       if (records.isEmpty) {
                         return const Center(
-                          child: Text('Os códigos criados e lidos aparecerão aqui.'),
+                          child: Text(
+                            'Os códigos criados e lidos aparecerão aqui.',
+                          ),
                         );
                       }
 

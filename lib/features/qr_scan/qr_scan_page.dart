@@ -3,9 +3,11 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:url_launcher/url_launcher.dart' as launcher;
 
+import '../../domain/qr_content_interpreter.dart';
 import '../../domain/qr_record.dart';
 import '../../domain/qr_record_repository.dart';
 
@@ -45,21 +47,8 @@ class QrScanPage extends StatefulWidget {
 }
 
 class _QrScanPageState extends State<QrScanPage> {
-  static const _formats = [
-    BarcodeFormat.qrCode,
-    BarcodeFormat.ean8,
-    BarcodeFormat.ean13,
-    BarcodeFormat.upcA,
-    BarcodeFormat.upcE,
-    BarcodeFormat.code128,
-    BarcodeFormat.code39,
-    BarcodeFormat.code93,
-    BarcodeFormat.codabar,
-    // ignore: deprecated_member_use
-    BarcodeFormat.itf,
-  ];
-
   late final MobileScannerController _controller;
+  final ImagePicker _imagePicker = ImagePicker();
 
   QrScanResult? _result;
   String? _errorMessage;
@@ -73,7 +62,13 @@ class _QrScanPageState extends State<QrScanPage> {
   bool get _usesTestPreview => widget.previewBuilder != null;
 
   bool get _supportsCamera =>
-      kIsWeb || defaultTargetPlatform == TargetPlatform.android;
+      kIsWeb ||
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
+
+  bool get _supportsImageAnalysis =>
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
 
   @override
   void initState() {
@@ -82,7 +77,7 @@ class _QrScanPageState extends State<QrScanPage> {
     _controller = MobileScannerController(
       autoStart: false,
       detectionSpeed: DetectionSpeed.normal,
-      formats: _formats,
+      // An empty format list enables every format supported by the plugin.
     );
   }
 
@@ -139,7 +134,14 @@ class _QrScanPageState extends State<QrScanPage> {
     try {
       await _controller.start();
 
-      if (!mounted || attempt != _startAttempt) return;
+      if (!mounted) return;
+      if (attempt != _startAttempt) {
+        // A navegação ou o botão Parar pode invalidar a inicialização
+        // enquanto o plugin ainda está concluindo start(). Garante que a
+        // câmera não permaneça ativa após essa tentativa ter sido cancelada.
+        await _stopCamera();
+        return;
+      }
 
       final scannerError = _controller.value.error;
 
@@ -153,7 +155,11 @@ class _QrScanPageState extends State<QrScanPage> {
         _cameraEnabled = true;
       });
     } on Object catch (error) {
-      if (!mounted || attempt != _startAttempt) return;
+      if (!mounted) return;
+      if (attempt != _startAttempt) {
+        await _stopCamera();
+        return;
+      }
       _setError(_messageForStartError(error));
     }
   }
@@ -187,25 +193,81 @@ class _QrScanPageState extends State<QrScanPage> {
 
   void _handleCapture(BarcodeCapture capture) {
     if (_hasRead || !widget.isActive || !_cameraEnabled) return;
+    _acceptCapture(capture);
+  }
 
+  void _acceptCapture(BarcodeCapture capture, {bool fromImage = false}) {
     for (final barcode in capture.barcodes) {
       final value = barcode.rawValue;
-
       if (value == null || value.isEmpty) continue;
 
       _acceptResult(
         QrScanResult(value: value, format: _formatLabel(barcode.format)),
+        fromImage: fromImage,
       );
-
       return;
     }
   }
 
-  void _acceptResult(QrScanResult result) {
+  Future<void> _pickImageAndScan() async {
+    if (!mounted || !widget.isActive || _hasRead) return;
+
+    if (!_supportsImageAnalysis) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'A leitura de códigos em imagens está disponível no aplicativo '
+            'Android e iOS. Na Web, use a câmera ao vivo.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    try {
+      final image = await _imagePicker.pickImage(source: ImageSource.gallery);
+      if (!mounted || image == null || !widget.isActive) return;
+
+      setState(() {
+        _errorMessage = null;
+        _isStarting = true;
+      });
+
+      final capture = await _controller.analyzeImage(image.path);
+      if (!mounted || !widget.isActive) return;
+
+      if (capture == null ||
+          capture.barcodes.every(
+            (item) => item.rawValue == null || item.rawValue!.isEmpty,
+          )) {
+        setState(() {
+          _isStarting = false;
+          _errorMessage =
+              'Não encontramos um QR Code ou código de barras nessa imagem. '
+              'Tente outra imagem mais nítida.';
+        });
+        return;
+      }
+
+      setState(() => _isStarting = false);
+      _acceptCapture(capture, fromImage: true);
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isStarting = false;
+        _errorMessage = error is UnsupportedError
+            ? 'A leitura de códigos em imagens não é suportada nesta plataforma. '
+                  'Use a câmera ao vivo em um dispositivo compatível.'
+            : 'Não foi possível ler essa imagem. Tente selecionar outro arquivo.';
+      });
+    }
+  }
+
+  void _acceptResult(QrScanResult result, {bool fromImage = false}) {
     if (_hasRead || !widget.isActive || result.value.isEmpty) return;
 
     // O preview simulado continua compatível com os testes existentes.
-    if (!_usesTestPreview && !_cameraEnabled) return;
+    if (!_usesTestPreview && !_cameraEnabled && !fromImage) return;
 
     _hasRead = true;
     _startAttempt++;
@@ -307,6 +369,9 @@ class _QrScanPageState extends State<QrScanPage> {
 
   String _formatLabel(BarcodeFormat format) => switch (format) {
     BarcodeFormat.qrCode => 'QR Code',
+    BarcodeFormat.dataMatrix => 'Data Matrix',
+    BarcodeFormat.aztec => 'Aztec',
+    BarcodeFormat.pdf417 => 'PDF417',
     BarcodeFormat.ean8 => 'EAN-8',
     BarcodeFormat.ean13 => 'EAN-13',
     BarcodeFormat.upcA => 'UPC-A',
@@ -315,6 +380,9 @@ class _QrScanPageState extends State<QrScanPage> {
     BarcodeFormat.code39 => 'Code 39',
     BarcodeFormat.code93 => 'Code 93',
     BarcodeFormat.codabar => 'Codabar',
+    BarcodeFormat.dataBar => 'DataBar',
+    BarcodeFormat.dataBarExpanded => 'DataBar expandido',
+    BarcodeFormat.maxiCode => 'MaxiCode',
     // ignore: deprecated_member_use
     BarcodeFormat.itf => 'ITF',
     _ => 'Código de barras',
@@ -330,6 +398,40 @@ class _QrScanPageState extends State<QrScanPage> {
 
     ScaffoldMessenger.of(context)
         .showSnackBar(const SnackBar(content: Text('Conte\u00FAdo copiado.')));
+  }
+
+  Future<void> _confirmOpenResultAction(Uri uri) async {
+    const allowedSchemes = {
+      'http',
+      'https',
+      'tel',
+      'mailto',
+      'sms',
+      'whatsapp',
+    };
+    if (!allowedSchemes.contains(uri.scheme.toLowerCase())) return;
+
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Confirmar ação externa'),
+        content: Text(
+          'O QR Code contém uma ação do tipo ${uri.scheme.toUpperCase()}. '
+          'Deseja abrir um aplicativo compatível? Nenhuma mensagem será enviada pelo QR Ops.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Continuar'),
+          ),
+        ],
+      ),
+    );
+    if (approved == true && mounted) await _openResultUrl(uri);
   }
 
   Future<void> _openResultUrl(Uri uri) async {
@@ -432,7 +534,7 @@ class _QrScanPageState extends State<QrScanPage> {
                           _ResultCard(
                             result: result,
                             onCopy: _copyResult,
-                            onOpenUrl: _openResultUrl,
+                            onOpenUrl: _confirmOpenResultAction,
                           ),
                           const SizedBox(height: 8),
                           FilledButton.icon(
@@ -445,11 +547,17 @@ class _QrScanPageState extends State<QrScanPage> {
                           const SizedBox(height: 12),
                           const _MessageCard(
                             icon: Icons.center_focus_strong_rounded,
-                            message:
-                                'Posicione o código na área da câmera para fazer a leitura.',
+                            message: 'Posicione o código na área da câmera para fazer a leitura.',
                           ),
                           const SizedBox(height: 8),
                           _buildCameraActions(),
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            key: const ValueKey('qr-scan-pick-image'),
+                            onPressed: _isStarting ? null : _pickImageAndScan,
+                            icon: const Icon(Icons.image_outlined),
+                            label: const Text('Ler de uma imagem'),
+                          ),
                         ],
                       ],
                     ),
@@ -497,8 +605,7 @@ class _QrScanPageState extends State<QrScanPage> {
             ? const _MessageCard(
                 key: ValueKey('qr-scan-platform-limit'),
                 icon: Icons.info_outline_rounded,
-                message:
-                    'A leitura pela câmera não está disponível nesta versão do Windows. Use o QR Ops no navegador ou em um dispositivo compatível.',
+                message: 'A leitura pela câmera não está disponível nesta versão do Windows. Use o QR Ops no navegador ou em um dispositivo compatível.',
               )
             : MobileScanner(
                 controller: _controller,
@@ -616,26 +723,41 @@ class _ResultCard extends StatelessWidget {
   final VoidCallback onCopy;
   final ValueChanged<Uri> onOpenUrl;
 
-  Uri? get _httpUri {
-    final value = result.value;
-    if (value.isEmpty ||
-        value.trim() != value ||
-        RegExp(r'\s').hasMatch(value)) {
-      return null;
+  QrContentInterpretation get _interpretation {
+    const numericRetailFormats = {'EAN-8', 'EAN-13', 'UPC-A', 'UPC-E'};
+    if (numericRetailFormats.contains(result.format)) {
+      return QrContentInterpretation(
+        kind: QrContentKind.text,
+        rawValue: result.value,
+      );
     }
-
-    final uri = Uri.tryParse(value);
-    if (uri == null ||
-        !const {'http', 'https'}.contains(uri.scheme.toLowerCase()) ||
-        uri.host.isEmpty) {
-      return null;
-    }
-    return uri;
+    return const QrContentInterpreter().interpret(result.value);
   }
+
+  String get _kindLabel => switch (_interpretation.kind) {
+    QrContentKind.url => 'Link',
+    QrContentKind.phone => 'Telefone',
+    QrContentKind.email => 'E-mail',
+    QrContentKind.whatsapp => 'WhatsApp',
+    QrContentKind.wifi => 'Rede Wi-Fi',
+    QrContentKind.vcard => 'Contato (vCard)',
+    QrContentKind.sms => 'SMS legado',
+    QrContentKind.text => 'Texto',
+  };
+
+  String? get _actionLabel => switch (_interpretation.kind) {
+    QrContentKind.url => 'Abrir link',
+    QrContentKind.phone => 'Abrir discador',
+    QrContentKind.email => 'Preparar e-mail',
+    QrContentKind.whatsapp => 'Abrir WhatsApp',
+    QrContentKind.sms => 'Abrir aplicativo de SMS',
+    _ => null,
+  };
 
   @override
   Widget build(BuildContext context) {
-    final uri = _httpUri;
+    final interpretation = _interpretation;
+    final uri = interpretation.uri;
     return Card(
       key: const ValueKey('qr-scan-result'),
       child: Padding(
@@ -647,7 +769,27 @@ class _ResultCard extends StatelessWidget {
               'Formato: ${result.format}',
               style: Theme.of(context).textTheme.labelLarge,
             ),
+            const SizedBox(height: 4),
+            Text('Tipo identificado: $_kindLabel'),
             const SizedBox(height: 8),
+            if (interpretation.kind == QrContentKind.wifi) ...[
+              for (final entry in interpretation.fields.entries)
+                if (entry.key != 'P' && entry.key != 'H')
+                  Text(
+                    '${switch (entry.key) {
+                      'S' => 'Rede',
+                      'T' => 'Segurança',
+                      _ => entry.key,
+                    }}: ${entry.value}',
+                  ),
+              if (interpretation.fields.containsKey('P'))
+                const Text(
+                  'A senha está presente no código. Copie o conteúdo apenas se necessário.',
+                ),
+            ],
+            if (interpretation.kind == QrContentKind.vcard)
+              for (final entry in interpretation.fields.entries)
+                Text('${entry.key}: ${entry.value}'),
             SelectableText(
               result.value,
               key: const ValueKey('qr-scan-result-value'),
@@ -659,6 +801,15 @@ class _ResultCard extends StatelessWidget {
                       decoration: TextDecoration.underline,
                     ),
             ),
+            if (_actionLabel != null && uri != null) ...[
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                key: const ValueKey('qr-scan-context-action'),
+                onPressed: () => onOpenUrl(uri),
+                icon: const Icon(Icons.open_in_new_rounded),
+                label: Text(_actionLabel!),
+              ),
+            ],
             const SizedBox(height: 8),
             Align(
               alignment: Alignment.centerRight,
