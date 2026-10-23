@@ -1,11 +1,14 @@
 import 'dart:async';
 
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image/image.dart' as img;
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:url_launcher/url_launcher.dart' as launcher;
+import 'package:zxing2/qrcode.dart' as zxing;
 
 import '../../domain/qr_content_interpreter.dart';
 import '../../domain/qr_record.dart';
@@ -56,6 +59,7 @@ class _QrScanPageState extends State<QrScanPage> {
   bool _isStarting = false;
   bool _cameraEnabled = false;
   bool _hasRead = false;
+  bool _isDraggingImage = false;
 
   int _startAttempt = 0;
 
@@ -67,8 +71,15 @@ class _QrScanPageState extends State<QrScanPage> {
       defaultTargetPlatform == TargetPlatform.iOS;
 
   bool get _supportsImageAnalysis =>
+      kIsWeb ||
       defaultTargetPlatform == TargetPlatform.android ||
       defaultTargetPlatform == TargetPlatform.iOS;
+
+  bool get _supportsFileDrop =>
+      kIsWeb ||
+      defaultTargetPlatform == TargetPlatform.windows ||
+      defaultTargetPlatform == TargetPlatform.linux ||
+      defaultTargetPlatform == TargetPlatform.macOS;
 
   @override
   void initState() {
@@ -210,19 +221,7 @@ class _QrScanPageState extends State<QrScanPage> {
   }
 
   Future<void> _pickImageAndScan() async {
-    if (!mounted || !widget.isActive || _hasRead) return;
-
-    if (!_supportsImageAnalysis) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'A leitura de códigos em imagens está disponível no aplicativo '
-            'Android e iOS. Na Web, use a câmera ao vivo.',
-          ),
-        ),
-      );
-      return;
-    }
+    if (!mounted || !widget.isActive || _hasRead || _isStarting) return;
 
     try {
       final image = await _imagePicker.pickImage(source: ImageSource.gallery);
@@ -233,18 +232,26 @@ class _QrScanPageState extends State<QrScanPage> {
         _isStarting = true;
       });
 
+      if (kIsWeb) {
+        await _scanQrFromImageBytes(await image.readAsBytes());
+        return;
+      }
+
+      if (!_supportsImageAnalysis) {
+        throw UnsupportedError(
+          'Image analysis is not supported on this platform.',
+        );
+      }
+
       final capture = await _controller.analyzeImage(image.path);
       if (!mounted || !widget.isActive) return;
-
       if (capture == null ||
           capture.barcodes.every(
             (item) => item.rawValue == null || item.rawValue!.isEmpty,
           )) {
         setState(() {
           _isStarting = false;
-          _errorMessage =
-              'Não encontramos um QR Code ou código de barras nessa imagem. '
-              'Tente outra imagem mais nítida.';
+          _errorMessage = 'Não encontramos um QR Code ou código de barras nessa imagem. Tente outra imagem mais nítida.';
         });
         return;
       }
@@ -256,9 +263,89 @@ class _QrScanPageState extends State<QrScanPage> {
       setState(() {
         _isStarting = false;
         _errorMessage = error is UnsupportedError
-            ? 'A leitura de códigos em imagens não é suportada nesta plataforma. '
-                  'Use a câmera ao vivo em um dispositivo compatível.'
-            : 'Não foi possível ler essa imagem. Tente selecionar outro arquivo.';
+            ? 'A leitura de imagens não é suportada nesta plataforma.'
+            : 'Não foi possível ler essa imagem. Use PNG, JPG ou WebP e tente novamente.';
+      });
+    }
+  }
+
+  Future<void> _handleDroppedFiles(DropDoneDetails details) async {
+    if (!mounted || !widget.isActive || _hasRead || _isStarting) return;
+
+    final files = details.files.where((file) {
+      final type = file.mimeType?.toLowerCase() ?? '';
+      final name = file.name.toLowerCase();
+      return type.startsWith('image/') ||
+          name.endsWith('.png') ||
+          name.endsWith('.jpg') ||
+          name.endsWith('.jpeg') ||
+          name.endsWith('.webp') ||
+          name.endsWith('.bmp') ||
+          name.endsWith('.gif');
+    });
+    final imageFile = files.isEmpty ? null : files.first;
+
+    if (imageFile == null) {
+      setState(() {
+        _isDraggingImage = false;
+        _errorMessage = 'Arraste um arquivo de imagem (PNG, JPG ou WebP).';
+      });
+      return;
+    }
+
+    setState(() {
+      _isDraggingImage = false;
+      _errorMessage = null;
+      _isStarting = true;
+    });
+
+    try {
+      await _scanQrFromImageBytes(await imageFile.readAsBytes());
+    } on Object {
+      if (!mounted) return;
+      setState(() {
+        _isStarting = false;
+        _errorMessage =
+            'Não foi possível ler essa imagem. Tente outro arquivo.';
+      });
+    }
+  }
+
+  Future<void> _scanQrFromImageBytes(Uint8List bytes) async {
+    if (!mounted || !widget.isActive) return;
+    if (bytes.isEmpty || bytes.length > 20 * 1024 * 1024) {
+      setState(() {
+        _isStarting = false;
+        _errorMessage = 'A imagem está vazia ou excede o limite de 20 MB.';
+      });
+      return;
+    }
+
+    try {
+      final decodedImage = img.decodeImage(bytes);
+      if (decodedImage == null) throw const FormatException('Invalid image');
+      final rgbaBytes = decodedImage
+          .convert(numChannels: 4)
+          .getBytes(order: img.ChannelOrder.abgr);
+      final source = zxing.RGBLuminanceSource(
+        decodedImage.width,
+        decodedImage.height,
+        rgbaBytes.buffer.asInt32List(),
+      );
+      final bitmap = zxing.BinaryBitmap(zxing.GlobalHistogramBinarizer(source));
+      final result = zxing.QRCodeReader().decode(bitmap);
+
+      if (!mounted || !widget.isActive) return;
+      setState(() => _isStarting = false);
+      _acceptResult(
+        QrScanResult(value: result.text, format: 'QR Code'),
+        fromImage: true,
+      );
+    } on Object {
+      if (!mounted) return;
+      setState(() {
+        _isStarting = false;
+        _errorMessage = 'Não encontramos um QR Code legível nessa imagem. Tente uma imagem mais nítida, sem cortes e com bom contraste.';
       });
     }
   }
@@ -505,7 +592,7 @@ class _QrScanPageState extends State<QrScanPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _buildPreview(),
+                        _buildDropZone(),
                         if (_isStarting) ...[
                           const SizedBox(height: 12),
                           const Center(
@@ -575,9 +662,59 @@ class _QrScanPageState extends State<QrScanPage> {
     if (!kIsWeb) return const SizedBox.shrink();
 
     return Text(
-      'Permita o acesso à câmera quando o navegador solicitar.',
+      'No computador, selecione uma imagem ou arraste o arquivo para a área do leitor. Para usar a câmera, permita o acesso quando o navegador solicitar.',
       key: const ValueKey('qr-scan-web-permission-hint'),
       style: textTheme.bodySmall,
+    );
+  }
+
+  Widget _buildDropZone() {
+    if (!_supportsFileDrop) return _buildPreview();
+
+    return DropTarget(
+      enable: widget.isActive && !_hasRead,
+      onDragEntered: (_) => setState(() => _isDraggingImage = true),
+      onDragExited: (_) => setState(() => _isDraggingImage = false),
+      onDragDone: _handleDroppedFiles,
+      child: Stack(
+        children: [
+          _buildPreview(),
+          if (_isDraggingImage)
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary
+                      .withValues(alpha: 0.88),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.onPrimary,
+                    width: 2,
+                  ),
+                ),
+                child: const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.file_download_outlined,
+                        size: 44,
+                        color: Colors.white,
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Solte a imagem aqui',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
