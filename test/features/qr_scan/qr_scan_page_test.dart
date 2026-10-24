@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:qr_ops/features/qr_scan/qr_scan_page.dart';
+import 'package:qr_ops/domain/qr_record.dart';
+import 'package:qr_ops/domain/qr_record_repository.dart';
 
 void main() {
   testWidgets('opens a valid HTTP URL and still copies its exact content', (
@@ -170,6 +172,36 @@ void main() {
     );
   });
 
+  testWidgets('saves a scanned result only when requested', (tester) async {
+    _setLargeTestViewport(tester);
+    final repository = _MemoryQrRecordRepository();
+    var refreshes = 0;
+    await tester.pumpWidget(
+      _testApp(repository: repository, onRecordRead: () => refreshes++),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('fake-scan-once')));
+    await tester.pumpAndSettle();
+
+    expect(repository.records, isEmpty);
+    expect(find.byKey(const ValueKey('qr-scan-save')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('qr-scan-save')));
+    await tester.pumpAndSettle();
+
+    expect(repository.records, hasLength(1));
+    expect(repository.records.single.content, 'ID-2');
+    expect(repository.records.single.operation, QrRecordOperation.read);
+    expect(refreshes, 1);
+    expect(find.text('Salvo no histórico'), findsOneWidget);
+    expect(find.text('Leitura salva no histórico.'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const ValueKey('qr-scan-save')))
+          .onPressed,
+      isNull,
+    );
+  });
+
   testWidgets('ignores detections while the reader area is inactive', (
     tester,
   ) async {
@@ -216,69 +248,105 @@ void _setLargeTestViewport(WidgetTester tester) {
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 
-Widget _testApp({QrScanUrlLauncher? urlLauncher, bool isActive = true}) =>
-    MaterialApp(
-      home: Scaffold(
-        body: QrScanPage(
-          isActive: isActive,
-          urlLauncher: urlLauncher,
-          previewBuilder: (context, onResult, onError) => ColoredBox(
-            color: Colors.black12,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                TextButton(
-                  key: const ValueKey('fake-scan-twice'),
-                  onPressed: () {
-                    const first = QrScanResult(
-                      value: '5901234123457',
-                      format: 'EAN-13',
-                    );
-                    onResult(first);
-                    onResult(
-                      const QrScanResult(value: 'duplicate', format: 'EAN-13'),
-                    );
-                  },
-                  child: const Text('Emitir duas detecções'),
-                ),
-                TextButton(
-                  key: const ValueKey('fake-scan-url'),
-                  onPressed: () => onResult(
-                    const QrScanResult(
-                      value: 'https://example.com/rota?q=setor%201#inicio',
-                      format: 'QR Code',
-                    ),
-                  ),
-                  child: const Text('Emitir URL'),
-                ),
-                TextButton(
-                  key: const ValueKey('fake-scan-once'),
-                  onPressed: () => onResult(
-                    const QrScanResult(value: 'ID-2', format: 'Code 128'),
-                  ),
-                  child: const Text('Emitir detecção'),
-                ),
-                TextButton(
-                  key: const ValueKey('fake-scan-domain'),
-                  onPressed: () => onResult(
-                    const QrScanResult(
-                      value: 'exemplo.com/rota',
-                      format: 'QR Code',
-                    ),
-                  ),
-                  child: const Text('Emitir domínio'),
-                ),
-                TextButton(
-                  key: const ValueKey('fake-camera-error'),
-                  onPressed: () => onError(
-                    'O acesso à câmera foi negado. Permita o acesso à câmera '
-                    'nas configurações e tente novamente.',
-                  ),
-                  child: const Text('Emitir erro'),
-                ),
-              ],
+Widget _testApp({
+  QrScanUrlLauncher? urlLauncher,
+  bool isActive = true,
+  QrRecordRepository? repository,
+  VoidCallback? onRecordRead,
+}) => MaterialApp(
+  home: Scaffold(
+    body: QrScanPage(
+      isActive: isActive,
+      urlLauncher: urlLauncher,
+      repository: repository,
+      onRecordRead: onRecordRead,
+      previewBuilder: (context, onResult, onError) => ColoredBox(
+        color: Colors.black12,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            TextButton(
+              key: const ValueKey('fake-scan-twice'),
+              onPressed: () {
+                const first = QrScanResult(
+                  value: '5901234123457',
+                  format: 'EAN-13',
+                );
+                onResult(first);
+                onResult(
+                  const QrScanResult(value: 'duplicate', format: 'EAN-13'),
+                );
+              },
+              child: const Text('Emitir duas detecções'),
             ),
-          ),
+            TextButton(
+              key: const ValueKey('fake-scan-url'),
+              onPressed: () => onResult(
+                const QrScanResult(
+                  value: 'https://example.com/rota?q=setor%201#inicio',
+                  format: 'QR Code',
+                ),
+              ),
+              child: const Text('Emitir URL'),
+            ),
+            TextButton(
+              key: const ValueKey('fake-scan-once'),
+              onPressed: () => onResult(
+                const QrScanResult(value: 'ID-2', format: 'Code 128'),
+              ),
+              child: const Text('Emitir detecção'),
+            ),
+            TextButton(
+              key: const ValueKey('fake-scan-domain'),
+              onPressed: () => onResult(
+                const QrScanResult(
+                  value: 'exemplo.com/rota',
+                  format: 'QR Code',
+                ),
+              ),
+              child: const Text('Emitir domínio'),
+            ),
+            TextButton(
+              key: const ValueKey('fake-camera-error'),
+              onPressed: () => onError(
+                'O acesso à câmera foi negado. Permita o acesso à câmera '
+                'nas configurações e tente novamente.',
+              ),
+              child: const Text('Emitir erro'),
+            ),
+          ],
         ),
       ),
-    );
+    ),
+  ),
+);
+
+class _MemoryQrRecordRepository implements QrRecordRepository {
+  final List<QrRecord> records = [];
+
+  @override
+  Future<QrRecord> insert(QrRecord record) async {
+    records.add(record);
+    return record;
+  }
+
+  @override
+  Future<List<QrRecord>> listLatest({int limit = 100}) async =>
+      records.reversed.take(limit).toList(growable: false);
+
+  @override
+  Future<QrRecord?> findById(String id) async =>
+      records.where((record) => record.id == id).firstOrNull;
+
+  @override
+  Future<bool> deleteById(String id) async => false;
+
+  @override
+  Future<bool> updateById(QrRecord record) async => false;
+
+  @override
+  Future<int> pruneReadHistoryBefore(DateTime cutoffUtc) async => 0;
+
+  @override
+  Future<int> deleteAllReadHistory() async => 0;
+}

@@ -58,6 +58,8 @@ class _QrScanPageState extends State<QrScanPage> {
   bool _isStarting = false;
   bool _cameraEnabled = false;
   bool _hasRead = false;
+  bool _isSavingResult = false;
+  bool _resultSaved = false;
   bool _isDraggingImage = false;
 
   int _startAttempt = 0;
@@ -344,19 +346,27 @@ class _QrScanPageState extends State<QrScanPage> {
       _errorMessage = null;
       _isStarting = false;
       _cameraEnabled = false;
+      _isSavingResult = false;
+      _resultSaved = false;
     });
 
     // Interrompe a câmera assim que o código é reconhecido.
     unawaited(_stopCamera());
-
-    if (widget.repository != null) {
-      unawaited(_persistResult(result));
-    }
   }
 
-  Future<void> _persistResult(QrScanResult result) async {
+  Future<void> _saveResult() async {
+    final result = _result;
+    final repository = widget.repository;
+    if (result == null ||
+        repository == null ||
+        _isSavingResult ||
+        _resultSaved) {
+      return;
+    }
+
+    setState(() => _isSavingResult = true);
     try {
-      await widget.repository!.insert(
+      await repository.insert(
         QrRecord.read(
           content: result.value,
           symbology: result.format.toLowerCase().replaceAll(' ', '_'),
@@ -367,18 +377,21 @@ class _QrScanPageState extends State<QrScanPage> {
         ),
       );
 
-      if (mounted) {
-        widget.onRecordRead?.call();
-      }
+      if (!mounted) return;
+      setState(() {
+        _isSavingResult = false;
+        _resultSaved = true;
+      });
+      widget.onRecordRead?.call();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Leitura salva no histórico.')),
+      );
     } on Object {
       if (!mounted) return;
-
+      setState(() => _isSavingResult = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'A leitura foi exibida, mas não foi possível '
-            'salvá-la no histórico.',
-          ),
+          content: Text('Não foi possível salvar a leitura no histórico.'),
         ),
       );
     }
@@ -606,6 +619,11 @@ class _QrScanPageState extends State<QrScanPage> {
                             result: result,
                             onCopy: _copyResult,
                             onOpenUrl: _confirmOpenResultAction,
+                            onSave: widget.repository == null
+                                ? null
+                                : _saveResult,
+                            isSaving: _isSavingResult,
+                            isSaved: _resultSaved,
                           ),
                           const SizedBox(height: 8),
                           FilledButton.icon(
@@ -838,11 +856,17 @@ class _ResultCard extends StatelessWidget {
     required this.result,
     required this.onCopy,
     required this.onOpenUrl,
+    required this.onSave,
+    required this.isSaving,
+    required this.isSaved,
   });
 
   final QrScanResult result;
   final VoidCallback onCopy;
   final ValueChanged<Uri> onOpenUrl;
+  final VoidCallback? onSave;
+  final bool isSaving;
+  final bool isSaved;
 
   QrContentInterpretation get _interpretation {
     const numericRetailFormats = {'EAN-8', 'EAN-13', 'UPC-A', 'UPC-E'};
@@ -932,14 +956,35 @@ class _ResultCard extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                key: const ValueKey('qr-scan-copy'),
-                onPressed: onCopy,
-                icon: const Icon(Icons.copy_rounded),
-                label: const Text('Copiar'),
-              ),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (onSave != null)
+                  FilledButton.icon(
+                    key: const ValueKey('qr-scan-save'),
+                    onPressed: isSaving || isSaved ? null : onSave,
+                    icon: Icon(
+                      isSaved
+                          ? Icons.check_circle_outline
+                          : Icons.save_outlined,
+                    ),
+                    label: Text(
+                      isSaving
+                          ? 'Salvando...'
+                          : isSaved
+                          ? 'Salvo no histórico'
+                          : 'Salvar no histórico',
+                    ),
+                  ),
+                TextButton.icon(
+                  key: const ValueKey('qr-scan-copy'),
+                  onPressed: onCopy,
+                  icon: const Icon(Icons.copy_rounded),
+                  label: const Text('Copiar'),
+                ),
+              ],
             ),
           ],
         ),
