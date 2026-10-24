@@ -136,6 +136,11 @@ void main() {
     await tester.pump();
 
     expect(find.text('https://example.com/qr-ops'), findsOneWidget);
+    await tester.tap(find.text('https://example.com/qr-ops'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('qr-preview')), findsOneWidget);
+    expect(find.text('Conteúdo do QR Code'), findsOneWidget);
+    expect(find.text('Exportar PNG'), findsOneWidget);
 
     final saved = await tester.runAsync(repository.listLatest);
     expect(saved, hasLength(1));

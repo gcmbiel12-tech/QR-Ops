@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../domain/qr_record.dart';
 import '../../domain/qr_record_repository.dart';
 import '../qr_create/qr_code_download.dart';
+import '../qr_create/qr_code_preview.dart';
 import '../qr_create/qr_creation_service.dart';
 import '../qr_create/qr_png_exporter.dart';
 
@@ -86,36 +87,75 @@ class _QrLibraryPageState extends State<QrLibraryPage> {
   }
 
   Future<void> _details(QrRecord record) async {
+    final qrImage = QrCreationService(widget.repository).encode(record.content);
+    if (!mounted) return;
+
     await showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          record.name.trim().isEmpty ? 'Detalhes do QR Code' : record.name,
-        ),
+      builder: (dialogContext) => AlertDialog(
+        title: Text(record.name.trim().isEmpty ? 'QR Code salvo' : record.name),
         content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (record.description.trim().isNotEmpty)
-                Text(record.description),
-              if (record.description.trim().isNotEmpty)
-                const SizedBox(height: 12),
-              SelectableText(record.content),
-            ],
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(dialogContext)
+                        .colorScheme
+                        .surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Center(
+                    child: QrCodePreview(image: qrImage, size: 260),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (record.description.trim().isNotEmpty) ...[
+                  Text(
+                    record.description,
+                    style: Theme.of(dialogContext).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                Text(
+                  'Conteúdo do QR Code',
+                  style: Theme.of(dialogContext).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 4),
+                SelectableText(record.content),
+                const SizedBox(height: 8),
+                Text(
+                  'Tipo: ${record.contentType.toUpperCase()}',
+                  style: Theme.of(dialogContext).textTheme.bodySmall,
+                ),
+              ],
+            ),
           ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Fechar'),
           ),
-          FilledButton(
+          TextButton.icon(
             onPressed: () {
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
               _copy(record);
             },
-            child: const Text('Copiar conteúdo'),
+            icon: const Icon(Icons.copy_rounded),
+            label: const Text('Copiar'),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _exportPng(record);
+            },
+            icon: const Icon(Icons.download_rounded),
+            label: const Text('Exportar PNG'),
           ),
         ],
       ),
