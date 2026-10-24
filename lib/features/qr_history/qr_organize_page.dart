@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../domain/qr_record_repository.dart';
 import 'qr_history_page.dart';
 import 'qr_library_page.dart';
+import 'qr_ocr_library_page.dart';
 
 class QrOrganizePage extends StatefulWidget {
   const QrOrganizePage({
@@ -26,7 +27,7 @@ class _QrOrganizePageState extends State<QrOrganizePage>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 2, vsync: this, initialIndex: 0)
+    _tabs = TabController(length: 3, vsync: this, initialIndex: 0)
       ..addListener(_onTabChanged);
   }
 
@@ -51,6 +52,7 @@ class _QrOrganizePageState extends State<QrOrganizePage>
           tabs: const [
             Tab(icon: Icon(Icons.folder_outlined), text: 'Biblioteca'),
             Tab(icon: Icon(Icons.history_rounded), text: 'Histórico'),
+            Tab(icon: Icon(Icons.text_snippet_outlined), text: 'Textos OCR'),
           ],
         ),
       ),
@@ -66,6 +68,10 @@ class _QrOrganizePageState extends State<QrOrganizePage>
               repository: widget.repository,
               refreshToken: widget.refreshToken,
               isActive: widget.isActive && _tabs.index == 1,
+            ),
+            QrOcrLibraryPage(
+              repository: widget.repository,
+              refreshToken: widget.refreshToken,
             ),
           ],
         ),

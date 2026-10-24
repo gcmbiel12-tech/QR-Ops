@@ -98,10 +98,18 @@ class HomePage extends StatelessWidget {
                   onTap: () => onNavigate(2),
                 ),
                 _AreaShortcut(
+                  icon: Icons.document_scanner_outlined,
+                  title: 'Scanear texto',
+                  description:
+                      'Reconheça texto em uma imagem após pressionar Scanear.',
+                  onTap: () => onNavigate(3),
+                ),
+                _AreaShortcut(
                   icon: Icons.folder_rounded,
                   title: 'Organizar códigos',
-                  description: 'Consulte os códigos salvos neste dispositivo.',
-                  onTap: () => onNavigate(3),
+                  description:
+                      'Consulte os códigos e textos salvos neste dispositivo.',
+                  onTap: () => onNavigate(4),
                 ),
                 const SizedBox(height: 20),
                 Text(

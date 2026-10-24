@@ -17,32 +17,44 @@ class SupabaseQrSyncTransport implements QrSyncPullTransport {
     if (mutations.isEmpty) return const [];
     final response = await client.rpc(
       'apply_qr_sync_batch',
-      params: {'p_mutations': mutations.map(_mutationToJson).toList(growable: false)},
+      params: {
+        'p_mutations': mutations.map(_mutationToJson).toList(growable: false),
+      },
     );
     if (response is! List) {
-      throw const FormatException('Resposta inválida do protocolo de sincronização.');
-    }
-    return response.map((item) {
-      if (item is! Map) throw const FormatException('Resultado de sincronização inválido.');
-      final row = Map<String, dynamic>.from(item);
-      final key = row['idempotency_key'];
-      final status = switch (row['status']) {
-        'applied' => QrSyncApplyStatus.applied,
-        'already_applied' => QrSyncApplyStatus.alreadyApplied,
-        'conflict' => QrSyncApplyStatus.conflict,
-        'retryable_failure' => QrSyncApplyStatus.retryableFailure,
-        final value => throw FormatException('Estado remoto desconhecido: $value'),
-      };
-      final revision = row['revision'];
-      if (key is! String) throw const FormatException('Resposta sem chave idempotente.');
-      return QrSyncApplyResult(
-        key,
-        status,
-        revision: revision is num ? revision.toInt() : null,
-        message: row['message'] as String?,
-        recordId: row['record_id'] as String?,
+      throw const FormatException(
+        'Resposta inválida do protocolo de sincronização.',
       );
-    }).toList(growable: false);
+    }
+    return response
+        .map((item) {
+          if (item is! Map) {
+            throw const FormatException('Resultado de sincronização inválido.');
+          }
+          final row = Map<String, dynamic>.from(item);
+          final key = row['idempotency_key'];
+          final status = switch (row['status']) {
+            'applied' => QrSyncApplyStatus.applied,
+            'already_applied' => QrSyncApplyStatus.alreadyApplied,
+            'conflict' => QrSyncApplyStatus.conflict,
+            'retryable_failure' => QrSyncApplyStatus.retryableFailure,
+            final value => throw FormatException(
+              'Estado remoto desconhecido: $value',
+            ),
+          };
+          final revision = row['revision'];
+          if (key is! String) {
+            throw const FormatException('Resposta sem chave idempotente.');
+          }
+          return QrSyncApplyResult(
+            key,
+            status,
+            revision: revision is num ? revision.toInt() : null,
+            message: row['message'] as String?,
+            recordId: row['record_id'] as String?,
+          );
+        })
+        .toList(growable: false);
   }
 
   @override
@@ -50,11 +62,15 @@ class SupabaseQrSyncTransport implements QrSyncPullTransport {
     _requireOwner(ownerId);
     final rows = await client
         .from('qr_records')
-        .select('id, operation_type, symbology, content_type, content, name, description, created_at, revision')
+        .select(
+          'id, operation_type, symbology, content_type, content, name, description, created_at, revision',
+        )
         .eq('author_id', ownerId)
         .order('updated_at', ascending: true)
         .limit(1000);
-    final records = rows.map((row) => _recordFromRow(row)).toList(growable: false);
+    final records = rows
+        .map((row) => _recordFromRow(row))
+        .toList(growable: false);
     final tombstoneRows = await client
         .from('qr_record_tombstones')
         .select('record_id, revision')
@@ -95,6 +111,9 @@ class SupabaseQrSyncTransport implements QrSyncPullTransport {
           'operation_type': switch (record.operation) {
             QrRecordOperation.create => 'create',
             QrRecordOperation.read => 'read',
+            QrRecordOperation.ocr => throw StateError(
+              'Registros OCR são locais e não podem ser sincronizados.',
+            ),
           },
           'symbology': record.symbology,
           'content_type': record.contentType,
@@ -110,7 +129,9 @@ class SupabaseQrSyncTransport implements QrSyncPullTransport {
     final operation = switch (row['operation_type']) {
       'create' => QrRecordOperation.create,
       'read' => QrRecordOperation.read,
-      final value => throw FormatException('Operação remota desconhecida: $value'),
+      final value => throw FormatException(
+        'Operação remota desconhecida: $value',
+      ),
     };
     return QrRecord(
       id: row['id'] as String,

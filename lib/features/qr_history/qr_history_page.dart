@@ -25,6 +25,7 @@ class _QrHistoryPageState extends State<QrHistoryPage> {
   String? _error;
   String _searchQuery = '';
   String? _contentTypeFilter;
+  final Set<String> _selectedIds = {};
 
   @override
   void initState() {
@@ -150,6 +151,64 @@ class _QrHistoryPageState extends State<QrHistoryPage> {
         setState(() => _error = 'Nao foi possivel limpar o historico.');
       }
     }
+  }
+
+  Future<void> _copySelected(List<QrRecord> records) async {
+    final selected = records
+        .where((record) => _selectedIds.contains(record.id))
+        .toList();
+    if (selected.isEmpty) return;
+    await _copyContent(selected.map((record) => record.content).join('\n'));
+  }
+
+  Future<void> _deleteSelected(List<QrRecord> records) async {
+    final selected = records
+        .where((record) => _selectedIds.contains(record.id))
+        .toList();
+    if (selected.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Excluir leituras selecionadas?'),
+        content: Text(
+          '${selected.length} registros de leitura serão removidos deste dispositivo. QR Codes salvos na biblioteca não serão afetados.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Excluir selecionados'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    var deleted = 0;
+    var failed = 0;
+    for (final record in selected) {
+      try {
+        if (await widget.repository.deleteById(record.id)) {
+          deleted++;
+        } else {
+          failed++;
+        }
+      } on Object {
+        failed++;
+      }
+    }
+    if (!mounted) return;
+    setState(() => _selectedIds.removeAll(selected.map((record) => record.id)));
+    _reload();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '$deleted de ${selected.length} leituras excluídas.${failed == 0 ? '' : ' Falhas: $failed.'}',
+        ),
+      ),
+    );
   }
 
   String _formatDate(DateTime value) {
@@ -313,47 +372,115 @@ class _QrHistoryPageState extends State<QrHistoryPage> {
                         );
                       }
 
-                      return ListView.separated(
-                        itemCount: records.length,
-                        separatorBuilder: (context, index) =>
-                            const SizedBox(height: 8),
-                        itemBuilder: (context, index) {
-                          final record = records[index];
-                          return Card(
-                            child: ListTile(
-                              contentPadding: const EdgeInsets.all(12),
-                              leading: const Icon(Icons.qr_code_2_rounded),
-                              title: Text(
-                                record.content,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
+                      final selectedCount = records
+                          .where((record) => _selectedIds.contains(record.id))
+                          .length;
+                      return Column(
+                        children: [
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Text(
+                                '$selectedCount selecionados de ${records.length}',
                               ),
-                              subtitle: Text(
-                                '${record.operation == QrRecordOperation.read ? 'Lido' : 'Criado'} • ${_formatDate(record.createdAt)}',
+                              TextButton(
+                                key: const ValueKey(
+                                  'qr-history-select-filtered',
+                                ),
+                                onPressed: () => setState(() {
+                                  if (selectedCount == records.length) {
+                                    _selectedIds.removeAll(
+                                      records.map((record) => record.id),
+                                    );
+                                  } else {
+                                    _selectedIds.addAll(
+                                      records.map((record) => record.id),
+                                    );
+                                  }
+                                }),
+                                child: Text(
+                                  selectedCount == records.length
+                                      ? 'Desmarcar resultados'
+                                      : 'Selecionar resultados filtrados',
+                                ),
                               ),
-                              onTap: () => _showDetails(record),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    key: ValueKey(
-                                      'qr-history-copy-${record.id}',
+                              if (selectedCount > 0) ...[
+                                TextButton.icon(
+                                  onPressed: () => _copySelected(records),
+                                  icon: const Icon(Icons.copy),
+                                  label: const Text('Copiar conteúdos'),
+                                ),
+                                TextButton.icon(
+                                  onPressed: () => _deleteSelected(records),
+                                  icon: const Icon(Icons.delete_outline),
+                                  label: const Text('Excluir selecionados'),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Expanded(
+                            child: ListView.separated(
+                              itemCount: records.length,
+                              separatorBuilder: (context, index) =>
+                                  const SizedBox(height: 8),
+                              itemBuilder: (context, index) {
+                                final record = records[index];
+                                return Card(
+                                  child: ListTile(
+                                    contentPadding: const EdgeInsets.all(12),
+                                    leading: Checkbox(
+                                      key: ValueKey(
+                                        'qr-history-select-${record.id}',
+                                      ),
+                                      value: _selectedIds.contains(record.id),
+                                      onChanged: (value) => setState(() {
+                                        if (value ?? false) {
+                                          _selectedIds.add(record.id);
+                                        } else {
+                                          _selectedIds.remove(record.id);
+                                        }
+                                      }),
                                     ),
-                                    tooltip: 'Copiar conteúdo',
-                                    onPressed: () =>
-                                        _copyContent(record.content),
-                                    icon: const Icon(Icons.copy_rounded),
+                                    title: Text(
+                                      record.content,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    subtitle: Text(
+                                      '${record.operation == QrRecordOperation.read ? 'Lido' : 'Criado'} • ${_formatDate(record.createdAt)}',
+                                    ),
+                                    onTap: () => _showDetails(record),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          key: ValueKey(
+                                            'qr-history-copy-${record.id}',
+                                          ),
+                                          tooltip: 'Copiar conteúdo',
+                                          onPressed: () =>
+                                              _copyContent(record.content),
+                                          icon: const Icon(Icons.copy_rounded),
+                                        ),
+                                        IconButton(
+                                          tooltip: 'Excluir do histórico',
+                                          onPressed: () =>
+                                              _confirmDelete(record),
+                                          icon: const Icon(
+                                            Icons.delete_outline,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                  IconButton(
-                                    tooltip: 'Excluir do histórico',
-                                    onPressed: () => _confirmDelete(record),
-                                    icon: const Icon(Icons.delete_outline),
-                                  ),
-                                ],
-                              ),
+                                );
+                              },
                             ),
-                          );
-                        },
+                          ),
+                        ],
                       );
                     },
                   ),

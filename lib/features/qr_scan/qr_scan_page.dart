@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:desktop_drop/desktop_drop.dart';
+import 'package:file_saver/file_saver.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,7 +11,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:url_launcher/url_launcher.dart' as launcher;
 
+import 'qr_batch_scan_page.dart';
 import 'qr_image_decoder.dart';
+import 'qr_pdf_decoder.dart';
 import '../../domain/qr_content_interpreter.dart';
 import '../../domain/qr_record.dart';
 import '../../domain/qr_record_repository.dart';
@@ -53,6 +58,8 @@ class _QrScanPageState extends State<QrScanPage> {
   final ImagePicker _imagePicker = ImagePicker();
 
   QrScanResult? _result;
+  List<QrPdfDecodeResult> _pdfResults = [];
+  String? _pdfFileName;
   String? _errorMessage;
 
   bool _isStarting = false;
@@ -129,6 +136,8 @@ class _QrScanPageState extends State<QrScanPage> {
 
     setState(() {
       _result = null;
+      _pdfResults = [];
+      _pdfFileName = null;
       _errorMessage = null;
       _hasRead = false;
       _isStarting = !_usesTestPreview;
@@ -270,6 +279,66 @@ class _QrScanPageState extends State<QrScanPage> {
     }
   }
 
+  Future<void> _pickPdfAndScan() async {
+    if (!mounted || !widget.isActive || _hasRead || _isStarting) return;
+    if (!kIsWeb) {
+      setState(() {
+        _errorMessage =
+            'A leitura de QR Code em PDF está disponível na versão Web.';
+      });
+      return;
+    }
+
+    try {
+      final selection = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['pdf'],
+      );
+      if (!mounted || selection.isEmpty || !widget.isActive) return;
+      final bytes = await selection.single.readAsBytes();
+      if (bytes.isEmpty) {
+        setState(() => _errorMessage = 'O PDF selecionado está vazio.');
+        return;
+      }
+
+      setState(() {
+        _errorMessage = null;
+        _isStarting = true;
+      });
+      final results = await decodeQrFromPdfBytes(bytes);
+      if (!mounted || !widget.isActive) return;
+
+      setState(() => _isStarting = false);
+      if (results.isEmpty) {
+        setState(() {
+          _errorMessage = 'Nenhum QR Code legível foi encontrado nas páginas do PDF. Tente um arquivo mais nítido.';
+        });
+        return;
+      }
+
+      setState(() {
+        _pdfResults = results;
+        _pdfFileName = selection.single.name;
+      });
+      _acceptResult(
+        QrScanResult(value: results.first.value, format: 'QR Code'),
+        fromImage: true,
+      );
+      setState(() => _pdfResults = results);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${results.length} QR Code(s) encontrado(s) no PDF.'),
+        ),
+      );
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isStarting = false;
+        _errorMessage = error is UnsupportedError ? error.message : 'Não foi possível ler o PDF. Use um arquivo não protegido por senha, com até 30 páginas e 20 MB.';
+      });
+    }
+  }
+
   Future<void> _handleDroppedFiles(DropDoneDetails details) async {
     if (!mounted || !widget.isActive || _hasRead || _isStarting) return;
 
@@ -352,6 +421,45 @@ class _QrScanPageState extends State<QrScanPage> {
 
     // Interrompe a câmera assim que o código é reconhecido.
     unawaited(_stopCamera());
+  }
+
+  Future<void> _downloadPdfResults() async {
+    if (_pdfResults.isEmpty) return;
+    final buffer = StringBuffer()
+      ..writeln('QR Ops - Resultados extraídos do PDF')
+      ..writeln('Arquivo: ${_pdfFileName ?? 'documento.pdf'}')
+      ..writeln('Total de QR Codes: ${_pdfResults.length}')
+      ..writeln();
+    for (var index = 0; index < _pdfResults.length; index++) {
+      final item = _pdfResults[index];
+      buffer
+        ..writeln('QR Code ${index + 1}')
+        ..writeln('Página: ${item.pageNumber} de ${item.totalPages}')
+        ..writeln('Conteúdo:')
+        ..writeln(item.value)
+        ..writeln('-' * 48)
+        ..writeln();
+    }
+
+    try {
+      await FileSaver.instance.saveFile(
+        name: 'qr-ops-resultados-pdf',
+        bytes: Uint8List.fromList(utf8.encode(buffer.toString())),
+        fileExtension: 'txt',
+        mimeType: MimeType.text,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Arquivo TXT preparado para salvar.')),
+        );
+      }
+    } on Object {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Não foi possível exportar o TXT.')),
+        );
+      }
+    }
   }
 
   Future<void> _saveResult() async {
@@ -581,6 +689,35 @@ class _QrScanPageState extends State<QrScanPage> {
                   'Aponte a câmera para um QR Code ou código de barras.',
                   style: textTheme.bodyLarge,
                 ),
+                if (widget.repository != null) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      key: const ValueKey('qr-open-batch-scan'),
+                      onPressed: () async {
+                        final navigator = Navigator.of(context);
+                        _startAttempt++;
+                        await _stopCamera();
+                        if (!mounted) return;
+                        setState(() {
+                          _cameraEnabled = false;
+                          _isStarting = false;
+                        });
+                        await navigator.push<void>(
+                          MaterialPageRoute<void>(
+                            builder: (_) => QrBatchScanPage(
+                              repository: widget.repository!,
+                              onRecordsSaved: widget.onRecordRead ?? () {},
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.playlist_add_check),
+                      label: const Text('Leitura em massa'),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 _buildSecurityHint(textTheme),
                 const SizedBox(height: 16),
@@ -625,6 +762,107 @@ class _QrScanPageState extends State<QrScanPage> {
                             isSaving: _isSavingResult,
                             isSaved: _resultSaved,
                           ),
+                          if (_pdfResults.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            Card(
+                              key: const ValueKey('qr-pdf-extraction-results'),
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    Text(
+                                      'QR Codes extraídos do PDF',
+                                      style: textTheme.titleMedium,
+                                    ),
+                                    if (_pdfFileName != null)
+                                      Text(
+                                        _pdfFileName!,
+                                        style: textTheme.bodySmall,
+                                      ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      '${_pdfResults.length} código(s) encontrado(s)',
+                                    ),
+                                    const SizedBox(height: 8),
+                                    for (
+                                      var index = 0;
+                                      index < _pdfResults.length;
+                                      index++
+                                    ) ...[
+                                      const Divider(),
+                                      Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          CircleAvatar(
+                                            radius: 16,
+                                            child: Text('${index + 1}'),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                if (_pdfResults[index].imageBase64.isNotEmpty)
+                                                  Padding(
+                                                    padding: const EdgeInsets.only(bottom: 8),
+                                                    child: Align(
+                                                      alignment: Alignment.centerLeft,
+                                                      child: Image.memory(
+                                                        base64Decode(_pdfResults[index].imageBase64),
+                                                        height: 112,
+                                                        fit: BoxFit.contain,
+                                                        errorBuilder: (_, _, _) => const Icon(Icons.qr_code_2, size: 72),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                Text(
+                                                  'QR Code ${index + 1} · Página ${_pdfResults[index].pageNumber}',
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .labelLarge,
+                                                ),
+                                                const SizedBox(height: 4),
+                                                SelectableText(
+                                                  _pdfResults[index].value,
+                                                  key: ValueKey(
+                                                    'qr-pdf-result-$index',
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          IconButton(
+                                            tooltip: 'Copiar conteúdo',
+                                            onPressed: () => Clipboard.setData(
+                                              ClipboardData(
+                                                text: _pdfResults[index].value,
+                                              ),
+                                            ),
+                                            icon: const Icon(Icons.copy),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                    const SizedBox(height: 12),
+                                    FilledButton.icon(
+                                      key: const ValueKey(
+                                        'qr-pdf-download-txt',
+                                      ),
+                                      onPressed: _downloadPdfResults,
+                                      icon: const Icon(Icons.download_outlined),
+                                      label: const Text(
+                                        'Baixar resultados em TXT',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 8),
                           FilledButton.icon(
                             key: const ValueKey('qr-scan-again'),
@@ -641,11 +879,31 @@ class _QrScanPageState extends State<QrScanPage> {
                           const SizedBox(height: 8),
                           _buildCameraActions(),
                           const SizedBox(height: 8),
-                          OutlinedButton.icon(
-                            key: const ValueKey('qr-scan-pick-image'),
-                            onPressed: _isStarting ? null : _pickImageAndScan,
-                            icon: const Icon(Icons.image_outlined),
-                            label: const Text('Ler de uma imagem'),
+                          Wrap(
+                            alignment: WrapAlignment.center,
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              OutlinedButton.icon(
+                                key: const ValueKey('qr-scan-pick-image'),
+                                onPressed: _isStarting
+                                    ? null
+                                    : _pickImageAndScan,
+                                icon: const Icon(Icons.image_outlined),
+                                label: const Text('Ler de uma imagem'),
+                              ),
+                              if (kIsWeb)
+                                OutlinedButton.icon(
+                                  key: const ValueKey('qr-scan-pick-pdf'),
+                                  onPressed: _isStarting
+                                      ? null
+                                      : _pickPdfAndScan,
+                                  icon: const Icon(
+                                    Icons.picture_as_pdf_outlined,
+                                  ),
+                                  label: const Text('Ler de um PDF'),
+                                ),
+                            ],
                           ),
                         ],
                       ],

@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:qr/qr.dart' as qr;
 
+import 'qr_batch_create_page.dart';
 import 'qr_code_download.dart';
 import 'qr_code_preview.dart';
 import 'qr_png_exporter.dart';
@@ -784,6 +785,23 @@ class _QrCreatePageState extends State<QrCreatePage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text('Criar QR Code', style: textTheme.headlineMedium),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    key: const ValueKey('qr-batch-open'),
+                    onPressed: () => Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (_) => QrBatchCreatePage(
+                          service: widget.service,
+                          onRecordsCreated: widget.onRecordCreated,
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.library_add_check_outlined),
+                    label: const Text('Criação em massa'),
+                  ),
+                ),
                 const SizedBox(height: 8),
                 Text(
                   'Escolha o que deseja compartilhar. O QR Code será montado '

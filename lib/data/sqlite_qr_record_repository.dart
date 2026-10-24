@@ -28,13 +28,18 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
         conflictAlgorithm: ConflictAlgorithm.abort,
       );
       final owner = syncOwnerContext?.userId;
-      if (owner != null) {
+      if (owner != null && record.operation != QrRecordOperation.ocr) {
         await _enqueue(
           txn,
           owner: owner,
           record: record,
           type: QrSyncMutationType.upsert,
-          baseRevision: await _nextBaseRevision(txn, owner, record.id, record.revision),
+          baseRevision: await _nextBaseRevision(
+            txn,
+            owner,
+            record.id,
+            record.revision,
+          ),
         );
       }
     });
@@ -43,7 +48,9 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
 
   @override
   Future<List<QrRecord>> listLatest({int limit = 100}) async {
-    if (limit < 1) throw ArgumentError.value(limit, 'limit', 'Must be positive.');
+    if (limit < 1) {
+      throw ArgumentError.value(limit, 'limit', 'Must be positive.');
+    }
     final rows = await _database.query(
       'qr_records',
       orderBy: 'created_at_ms DESC, id DESC',
@@ -66,12 +73,22 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
   @override
   Future<bool> deleteById(String id) async {
     return _database.transaction((txn) async {
-      final rows = await txn.query('qr_records', where: 'id = ?', whereArgs: [id], limit: 1);
+      final rows = await txn.query(
+        'qr_records',
+        where: 'id = ?',
+        whereArgs: [id],
+        limit: 1,
+      );
       if (rows.isEmpty) return false;
       final record = _fromRow(rows.single);
       final owner = syncOwnerContext?.userId;
-      if (owner != null) {
-        final baseRevision = await _nextBaseRevision(txn, owner, record.id, record.revision);
+      if (owner != null && record.operation != QrRecordOperation.ocr) {
+        final baseRevision = await _nextBaseRevision(
+          txn,
+          owner,
+          record.id,
+          record.revision,
+        );
         await _enqueue(
           txn,
           owner: owner,
@@ -90,19 +107,34 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
   @override
   Future<bool> updateById(QrRecord record) async {
     return _database.transaction((txn) async {
-      final rows = await txn.query('qr_records', where: 'id = ?', whereArgs: [record.id], limit: 1);
+      final rows = await txn.query(
+        'qr_records',
+        where: 'id = ?',
+        whereArgs: [record.id],
+        limit: 1,
+      );
       if (rows.isEmpty) return false;
       final old = _fromRow(rows.single);
       final preserved = record.withRevision(old.revision);
-      await txn.update('qr_records', _toRow(preserved), where: 'id = ?', whereArgs: [record.id]);
+      await txn.update(
+        'qr_records',
+        _toRow(preserved),
+        where: 'id = ?',
+        whereArgs: [record.id],
+      );
       final owner = syncOwnerContext?.userId;
-      if (owner != null) {
+      if (owner != null && preserved.operation != QrRecordOperation.ocr) {
         await _enqueue(
           txn,
           owner: owner,
           record: preserved,
           type: QrSyncMutationType.upsert,
-          baseRevision: await _nextBaseRevision(txn, owner, preserved.id, old.revision),
+          baseRevision: await _nextBaseRevision(
+            txn,
+            owner,
+            preserved.id,
+            old.revision,
+          ),
         );
       }
       return true;
@@ -127,7 +159,12 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
             record: null,
             recordId: record.id,
             type: QrSyncMutationType.delete,
-            baseRevision: await _nextBaseRevision(txn, owner, record.id, record.revision),
+            baseRevision: await _nextBaseRevision(
+              txn,
+              owner,
+              record.id,
+              record.revision,
+            ),
             changedAt: DateTime.now().toUtc(),
           );
         }
@@ -145,7 +182,11 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
     return _database.transaction((txn) async {
       final owner = syncOwnerContext?.userId;
       if (owner != null) {
-        final rows = await txn.query('qr_records', where: 'operation_type = ?', whereArgs: ['read']);
+        final rows = await txn.query(
+          'qr_records',
+          where: 'operation_type = ?',
+          whereArgs: ['read'],
+        );
         for (final row in rows) {
           final record = _fromRow(row);
           await _enqueue(
@@ -154,12 +195,21 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
             record: null,
             recordId: record.id,
             type: QrSyncMutationType.delete,
-            baseRevision: await _nextBaseRevision(txn, owner, record.id, record.revision),
+            baseRevision: await _nextBaseRevision(
+              txn,
+              owner,
+              record.id,
+              record.revision,
+            ),
             changedAt: DateTime.now().toUtc(),
           );
         }
       }
-      return txn.delete('qr_records', where: 'operation_type = ?', whereArgs: ['read']);
+      return txn.delete(
+        'qr_records',
+        where: 'operation_type = ?',
+        whereArgs: ['read'],
+      );
     });
   }
 
@@ -174,7 +224,9 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
       [owner, recordId],
     );
     final pendingUpserts = (rows.single['count'] as num).toInt();
-    return revision == 0 && pendingUpserts == 0 ? null : revision + pendingUpserts;
+    return revision == 0 && pendingUpserts == 0
+        ? null
+        : revision + pendingUpserts;
   }
 
   Future<void> _enqueue(
@@ -186,14 +238,18 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
     String? recordId,
     DateTime? changedAt,
   }) async {
-    final requestedMs = (changedAt ?? DateTime.now()).toUtc().millisecondsSinceEpoch;
+    final requestedMs = (changedAt ?? DateTime.now())
+        .toUtc()
+        .millisecondsSinceEpoch;
     final previousRows = await txn.rawQuery(
       'SELECT MAX(created_at_ms) AS last_ms FROM qr_sync_outbox WHERE owner_id = ? AND record_id = ?',
       [owner, recordId ?? record!.id],
     );
     final previousMs = previousRows.single['last_ms'] as int?;
     final now = DateTime.fromMillisecondsSinceEpoch(
-      previousMs == null ? requestedMs : (requestedMs > previousMs ? requestedMs : previousMs + 1),
+      previousMs == null
+          ? requestedMs
+          : (requestedMs > previousMs ? requestedMs : previousMs + 1),
       isUtc: true,
     );
     final mutation = QrSyncMutation(
@@ -212,16 +268,35 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
   @override
   Future<void> applyRemoteRecord(QrRecord record) async {
     await _database.transaction((txn) async {
-      final rows = await txn.query('qr_records', where: 'id = ?', whereArgs: [record.id], limit: 1);
-      if (rows.isNotEmpty && _fromRow(rows.single).revision > record.revision) return;
-      await txn.insert('qr_records', _toRow(record), conflictAlgorithm: ConflictAlgorithm.replace);
+      final rows = await txn.query(
+        'qr_records',
+        where: 'id = ?',
+        whereArgs: [record.id],
+        limit: 1,
+      );
+      if (rows.isNotEmpty && _fromRow(rows.single).revision > record.revision) {
+        return;
+      }
+      await txn.insert(
+        'qr_records',
+        _toRow(record),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
     });
   }
 
   @override
-  Future<void> applyRemoteDelete(String recordId, {required int revision}) async {
+  Future<void> applyRemoteDelete(
+    String recordId, {
+    required int revision,
+  }) async {
     await _database.transaction((txn) async {
-      final rows = await txn.query('qr_records', where: 'id = ?', whereArgs: [recordId], limit: 1);
+      final rows = await txn.query(
+        'qr_records',
+        where: 'id = ?',
+        whereArgs: [recordId],
+        limit: 1,
+      );
       if (rows.isEmpty) return;
       if (_fromRow(rows.single).revision <= revision) {
         await txn.delete('qr_records', where: 'id = ?', whereArgs: [recordId]);
@@ -255,7 +330,10 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
     final operation = switch (row['operation_type']) {
       'create' => QrRecordOperation.create,
       'read' => QrRecordOperation.read,
-      final value => throw FormatException('Operação desconhecida no histórico: $value'),
+      'ocr' => QrRecordOperation.ocr,
+      final value => throw FormatException(
+        'Operação desconhecida no histórico: $value',
+      ),
     };
     return QrRecord(
       id: row['id']! as String,
@@ -265,13 +343,18 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
       content: row['content']! as String,
       name: row['name'] as String? ?? '',
       description: row['description'] as String? ?? '',
-      createdAt: DateTime.fromMillisecondsSinceEpoch(row['created_at_ms']! as int, isUtc: true),
+      createdAt: DateTime.fromMillisecondsSinceEpoch(
+        row['created_at_ms']! as int,
+        isUtc: true,
+      ),
       revision: row['revision'] as int? ?? 0,
     );
   }
 
-  String _operationToStorage(QrRecordOperation operation) => switch (operation) {
-    QrRecordOperation.create => 'create',
-    QrRecordOperation.read => 'read',
-  };
+  String _operationToStorage(QrRecordOperation operation) =>
+      switch (operation) {
+        QrRecordOperation.create => 'create',
+        QrRecordOperation.read => 'read',
+        QrRecordOperation.ocr => 'ocr',
+      };
 }

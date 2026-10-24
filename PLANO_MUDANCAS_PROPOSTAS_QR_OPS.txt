@@ -1,0 +1,376 @@
+QR OPS — PLANO DE MUDANÇAS E PROPOSTAS
+Versão: 1.0
+Data: 24/10/2026
+Status: DOCUMENTO DE PLANEJAMENTO — NÃO IMPLEMENTAR SEM AUTORIZAÇÃO
+
+OBJETIVO
+Planejar novas funcionalidades do QR Ops com foco em praticidade, clareza visual, acessibilidade, desempenho e segurança dos dados. Este documento registra as propostas discutidas; não autoriza alterações no código.
+
+REGRAS GERAIS
+- Não alterar nem implementar funcionalidades com base apenas neste documento.
+- Preservar o comportamento existente do QR Ops e a arquitetura atual.
+- Antes de implementar, inspecionar o repositório, o estado do Git e os componentes existentes.
+- Não remover funcionalidades atuais nem sobrescrever alterações locais.
+- Projetar para Web, Windows e Android, identificando diferenças e limitações por plataforma.
+- Considerar sincronização entre dispositivos como requisito do produto, mas não misturar esse trabalho com estas funcionalidades sem planejamento de dependências.
+- Manter as ações de salvar, baixar, compartilhar e exportar distintas e com resultados claros.
+- Dar atenção especial ao desempenho e à experiência quando houver centenas ou milhares de itens.
+
+1. NAVEGAÇÃO PRINCIPAL PROPOSTA
+A navegação deverá apresentar cinco opções:
+1. Início
+2. Criar
+3. Ler
+4. Scanear
+5. Organizar
+
+Distinção funcional:
+- Ler: ler QR Codes e códigos compatíveis, conforme as funções existentes.
+- Scanear: reconhecer texto e números em imagens usando OCR (Reconhecimento Óptico de Caracteres).
+- Criar: criar um QR Code individual ou gerar vários em lote.
+- Organizar: consultar, pesquisar, filtrar, selecionar e administrar itens salvos e histórico.
+
+Avaliar a adaptação responsiva da navegação em telas pequenas. Os rótulos devem ser consistentes e os ícones não devem ser a única forma de identificar uma função.
+
+2. NOVA FUNÇÃO: SCANEAR TEXTO/NÚMEROS (OCR)
+
+2.1 Objetivo
+Permitir capturar texto e números usando a câmera ou uma imagem existente no dispositivo. O reconhecimento somente deve começar quando o usuário pressionar o botão “Scanear”, não automaticamente durante a visualização da câmera.
+
+2.2 Fluxo proposto
+1. Abrir a câmera ou selecionar uma imagem existente.
+2. Mostrar a imagem/enquadramento e permitir ajustar a captura.
+3. O usuário pressiona “Scanear”.
+4. O sistema executa OCR e mostra o progresso.
+5. O resultado aparece em uma área de texto editável.
+6. O usuário revisa e corrige o resultado.
+7. O usuário escolhe uma ação: Salvar, Baixar, Compartilhar ou Copiar.
+
+2.3 Ações
+- Salvar: guardar o resultado em Organizar, mediante ação explícita.
+- Baixar: baixar o texto em formato TXT usando o fluxo padrão da plataforma.
+- Compartilhar: compartilhar o texto quando suportado pelo sistema.
+- Copiar: copiar o texto reconhecido.
+- Repetir leitura: reconhecer outra imagem e permitir acrescentar o texto ao resultado atual.
+- Limpar: limpar o conteúdo, com confirmação se houver alterações não salvas.
+
+2.4 Regras de experiência
+- Preservar quebras de linha sempre que possível, pois códigos, números de série e listas dependem delas.
+- Não afirmar que o reconhecimento está correto; permitir revisão e edição.
+- Mostrar mensagens claras para imagem ilegível, ausência de texto, falta de permissão de câmera e falhas de OCR.
+- Não salvar automaticamente como registro definitivo. Preferência inicial: salvar somente quando o usuário pedir.
+- Se viável sem complexidade excessiva, oferecer rascunho recuperável após falha ou fechamento inesperado.
+- Definir privacidade e processamento: preferir OCR local quando a qualidade e as plataformas suportarem; se houver serviço externo, informar claramente antes de enviar imagens.
+
+3. NOVA FUNÇÃO EM CRIAR: CRIAÇÃO DE QR CODES EM MASSA
+
+3.1 Entrada
+Adicionar uma opção “Criação em massa” em Criar.
+O usuário poderá informar códigos separados por:
+- Linhas;
+- Vírgulas;
+- Ponto e vírgula;
+- Intervalos numéricos, por exemplo 1001-1020.
+
+Texto orientativo sugerido:
+“Informe códigos separados por linha, vírgula ou ponto e vírgula, ou intervalos como 1001-1020. Revise os itens antes de confirmar.”
+
+3.2 Tratamento de hífen
+Incluir a opção:
+“Tratar hífen como parte do código (não como intervalo)”.
+
+Regras propostas:
+- Reconhecer intervalo apenas quando a entrada corresponder claramente a dois números separados por hífen.
+- Preservar códigos alfanuméricos como ABC-001.
+- Quando a opção de hífen literal estiver marcada, tratar a entrada 1001-1020 como um único código.
+- Validar intervalos invertidos, entradas vazias, caracteres inválidos e lotes excessivos.
+- Não expandir intervalos enormes sem limite ou confirmação.
+- Definir e documentar como tratar zeros à esquerda. Recomendação: preservar a largura numérica quando o intervalo permitir interpretação inequívoca.
+
+3.3 Revisão antes da geração
+Mostrar uma prévia antes de criar:
+- Um cartão por item, com QR Code e identificação legível abaixo.
+- Quantidade total de itens.
+- Seleção individual e “Selecionar todos”.
+- Avisos de duplicatas, entradas inválidas e possíveis conflitos.
+- Possibilidade de remover ou editar itens antes de confirmar.
+
+Recomendação para duplicatas: avisar e permitir que o usuário decida; não remover silenciosamente.
+
+3.4 Tamanho dos QR Codes — requisito novo
+Permitir escolher o tamanho dos QR Codes gerados em massa. A escolha deve afetar a exportação e o PDF, sem prejudicar a legibilidade.
+
+Proposta inicial:
+- Pequeno;
+- Médio (padrão recomendado);
+- Grande;
+- Personalizado, se a implementação permitir definir dimensões sem tornar a interface confusa.
+
+Na opção personalizada, definir unidades e limites claros. Separar, quando necessário, o tamanho visual da imagem do QR da resolução/qualidade do PNG.
+A prévia deve refletir o tamanho selecionado.
+Não permitir dimensões tão pequenas que tornem o código difícil de ler. Validar os tamanhos mínimos e máximos com testes reais de impressão e leitura.
+O tamanho escolhido deve ser aplicado consistentemente aos itens selecionados e ao PDF.
+
+3.5 Ações em lote
+Disponibilizar:
+- Salvar todos;
+- Salvar selecionados;
+- Baixar todos;
+- Baixar selecionados;
+- Compartilhar um item ou itens selecionados;
+- Gerar PDF de todos ou dos itens selecionados.
+
+O usuário deve poder realizar ações individuais por QR Code, sem perder as ações em lote.
+
+3.6 Download
+Recomendação inicial:
+- ZIP contendo um PNG por QR Code, com nomes de arquivo previsíveis e seguros;
+- PDF com os QR Codes e suas identificações;
+- Permitir escolher somente os itens selecionados.
+Evitar disparar centenas de downloads individuais no navegador.
+Definir tratamento de nomes repetidos e caracteres inválidos nos nomes dos arquivos.
+Informar progresso e erros em lotes grandes.
+
+3.7 PDF
+O PDF deve ser um resultado de primeira classe para a criação em massa.
+Propor dois modelos:
+A. Folha de etiquetas: grade de QR Codes com a identificação abaixo de cada um, otimizada para impressão.
+B. Relatório: códigos maiores e mais espaçados, útil quando é necessária leitura a distância.
+Permitir:
+- Todos ou selecionados;
+- Tamanho escolhido;
+- Identificação legível;
+- Margens e espaçamento adequados;
+- Paginação automática;
+- Contraste e tamanho mínimo que preservem a leitura.
+Avaliar formatos de página e opções de impressão posteriormente, sem sobrecarregar a primeira versão.
+
+4. LEITURA EM MASSA DE QR CODES — PROPOSTA
+
+4.1 Viabilidade
+Sim, é tecnicamente viável. A implementação exata depende da biblioteca de leitura já utilizada, das plataformas e do desempenho da câmera. É necessário testar em dispositivos reais.
+
+4.2 Recomendação de primeira versão
+Começar com leitura em lote sequencial:
+1. Abrir a câmera uma vez.
+2. Ler um QR Code.
+3. Mostrar o resultado na lista do lote e indicar que foi adicionado.
+4. Continuar lendo o próximo sem sair da tela.
+5. Permitir pausar/retomar a captura.
+6. Finalizar o lote e revisar os resultados.
+7. Salvar no histórico e/ou exportar conforme as opções escolhidas.
+
+A leitura deve evitar adicionar repetidamente o mesmo QR enquanto ele permanece diante da câmera. Implementar um intervalo/estado de confirmação por código e permitir que o usuário decida se duplicatas são permitidas.
+Não salvar ou compartilhar um lote completo sem uma ação clara do usuário.
+
+4.3 Múltiplos QR Codes no mesmo enquadramento
+Considerar como evolução posterior. Detectar vários QR Codes em um único quadro depende do suporte real da biblioteca e pode variar entre Web, Windows e Android. Não prometer esse comportamento antes de validar a tecnologia.
+Primeiro entregar leitura sequencial contínua, que tende a ser mais previsível e fácil de utilizar.
+
+4.4 Interface sugerida
+- Botão Iniciar/Pausar;
+- Contador de itens lidos;
+- Lista dos códigos capturados;
+- Indicador de leitura duplicada;
+- Remover item individual;
+- Limpar lote com confirmação;
+- Finalizar e revisar;
+- Salvar no histórico;
+- Copiar/exportar/compartilhar, quando suportado.
+
+4.5 Histórico e dados
+Definir antes da implementação se um lote será:
+- Apenas um conjunto temporário de trabalho;
+- Um grupo de eventos no histórico;
+- Ou ambos, com identificação do lote.
+
+Recomendação: preservar cada leitura como evento de histórico, respeitando a retenção atual de sete dias, e associar opcionalmente as leituras a um identificador de lote para facilitar revisão e exportação. Não alterar a regra atual de retenção sem decisão explícita.
+
+5. ORGANIZAR — FOCO EM GRANDES QUANTIDADES
+
+Organizar deverá manter as funções existentes e tornar mais eficiente a administração de muitos itens. Não transformar a tela em uma lista pesada ou visualmente confusa.
+
+5.1 Categorias/filtros sugeridos
+- Biblioteca de QR Codes criados/salvos;
+- Histórico de QR Codes lidos;
+- Textos reconhecidos por OCR;
+- Lotes, se a leitura em massa for implementada.
+
+Preferir filtros e seções dentro de Organizar, evitando novas abas principais para cada tipo de conteúdo.
+
+5.2 Operações individuais e em lote
+- Abrir detalhes;
+- Pesquisar;
+- Filtrar por tipo e data;
+- Ordenar por nome, conteúdo ou data;
+- Selecionar um ou vários itens;
+- Selecionar todos os resultados filtrados;
+- Salvar, editar, baixar, compartilhar, exportar ou excluir conforme o tipo de item;
+- Confirmar operações destrutivas;
+- Mostrar quantos itens foram selecionados e quantos serão afetados.
+
+Não mostrar ações incompatíveis com o tipo de item selecionado.
+
+5.3 Usabilidade em grandes quantidades
+- Pesquisa responsiva e filtros claros;
+- Seleção em lote com barra de ações visível;
+- Paginação ou carregamento progressivo, conforme a arquitetura atual;
+- Não renderizar milhares de imagens QR simultaneamente sem necessidade;
+- Gerar imagens e PDFs sob demanda;
+- Mostrar progresso para operações longas;
+- Permitir cancelar operações que ainda não foram finalizadas com segurança;
+- Apresentar resumo final de sucesso, falhas e itens ignorados;
+- Tratar falhas parciais sem perder os resultados que já foram concluídos;
+- Usar nomes de arquivos previsíveis e evitar sobrescritas;
+- Oferecer feedback acessível e consistente, inclusive em telas pequenas.
+
+5.4 Exclusões
+Em operações em massa, mostrar a quantidade e o tipo de itens que serão excluídos. Exigir confirmação clara.
+A exclusão e sua sincronização devem respeitar o protocolo de sincronização do produto, incluindo tombstones/idempotência quando aplicável. Não permitir que um dispositivo offline ressuscite itens excluídos por outro.
+
+6. REGRAS DE CONSISTÊNCIA ENTRE FUNCIONALIDADES
+
+- QR Code criado em massa deve utilizar os mesmos padrões de conteúdo, validação e geração da criação individual.
+- O salvamento deve respeitar o modelo existente da biblioteca e os campos de nome/descrição quando aplicáveis.
+- A leitura de QR Code continua separada do OCR de texto.
+- O resultado OCR não deve ser confundido com um QR Code.
+- A leitura em massa deve preservar a distinção entre eventos do histórico e itens salvos na biblioteca.
+- As operações de Organizar devem atuar sobre os repositórios e modelos existentes, evitando criar um segundo sistema paralelo de armazenamento.
+- Se houver conta autenticada, respeitar a arquitetura e o consentimento de sincronização já definidos.
+- Operações locais devem continuar utilizáveis sem conta, de acordo com o comportamento atual.
+
+7. FASEAMENTO RECOMENDADO
+
+Fase 1 — Planejamento técnico e protótipos
+- Inspecionar navegação, geração QR, leitura, repositórios, exportações e Organizar.
+- Confirmar bibliotecas disponíveis para OCR, PDF, ZIP, compartilhamento e câmera.
+- Validar compatibilidade e licenças das dependências.
+- Definir limites iniciais e regras de desempenho.
+- Preparar protótipos de tela sem modificar o fluxo existente.
+
+Fase 2 — Organizar para grandes quantidades
+- Melhorar pesquisa, filtros, seleção múltipla e barra de ações.
+- Implementar feedback de progresso e falhas parciais onde necessário.
+- Testar com conjuntos grandes de dados.
+
+Fase 3 — Criação em massa
+- Parser de linhas, vírgulas, ponto e vírgula e intervalos;
+- Tratamento de hífen e duplicatas;
+- Prévia e edição;
+- Seleção parcial;
+- Tamanho dos QR Codes;
+- Salvar em lote;
+- ZIP de PNGs e PDF com todos/selecionados.
+
+Fase 4 — Scanear (OCR)
+- Câmera e seleção de imagem;
+- Captura sob demanda pelo botão;
+- Área editável;
+- Salvar, baixar, copiar e compartilhar;
+- Permissões, erros, desempenho e privacidade.
+
+Fase 5 — Leitura em massa
+- Captura sequencial contínua;
+- Prevenção de leituras repetidas involuntárias;
+- Pausa/retomada;
+- Revisão do lote;
+- Salvamento no histórico e exportação;
+- Testes de câmera nas plataformas suportadas.
+
+Fase 6 — Validação integrada
+- Testes automatizados e manuais;
+- Testes com lotes pequenos, médios e grandes;
+- Testes de memória e responsividade;
+- Testes de exportação e impressão;
+- Testes offline e de sincronização;
+- Verificação de regressões nas funções atuais.
+
+A ordem poderá mudar após a inspeção técnica, mas qualquer mudança deve ser explicada antes da implementação.
+
+8. CRITÉRIOS DE ACEITAÇÃO
+
+A implementação só será considerada concluída quando:
+- A navegação e os rótulos forem claros e consistentes;
+- OCR começar somente após ação explícita do usuário;
+- O texto reconhecido puder ser editado antes de salvar;
+- A criação em massa interpretar entradas conforme as regras aprovadas;
+- O usuário puder escolher o tamanho dos QR Codes;
+- A prévia permitir selecionar itens individualmente ou em lote;
+- ZIP e PDF incluírem apenas os itens solicitados;
+- O PDF manter QR Codes legíveis e identificações corretas;
+- A leitura em massa não repetir continuamente o mesmo código sem controle;
+- Organizar continuar responsivo com grandes quantidades;
+- Falhas parciais não causarem perda silenciosa de dados;
+- Funcionalidades atuais continuarem funcionando;
+- Testes, análise estática e builds relevantes passarem;
+- Limitações por plataforma estiverem documentadas.
+
+9. PONTOS PARA DECISÃO ANTES DA IMPLEMENTAÇÃO
+
+As recomendações iniciais deste plano são:
+- OCR: câmera e imagens existentes; leitura somente após apertar “Scanear”.
+- OCR: salvamento manual, com baixar, copiar e compartilhar separados.
+- Duplicatas na criação em massa: avisar e permitir decisão do usuário.
+- Download em massa: ZIP com PNGs e PDF.
+- Limite inicial sugerido: 500 QR Codes por lote, ajustável após testes.
+- Tamanho dos QR Codes: pequeno, médio, grande e avaliar tamanho personalizado.
+- Leitura em massa: começar pela captura sequencial contínua; múltiplos QR Codes no mesmo quadro ficam para uma etapa posterior.
+- Organizar: manter as categorias dentro da aba, com pesquisa, filtros, seleção múltipla e ações em lote.
+- Exclusões: sempre informar quantidade e confirmar antes de uma ação destrutiva.
+
+10. INSTRUÇÃO FINAL AO DESENVOLVEDOR
+
+Este documento é uma proposta de planejamento. Não editar código, não instalar dependências, não alterar banco de dados, não fazer commit, push ou deploy com base apenas neste arquivo.
+O próximo passo autorizado é revisar a arquitetura atual e apresentar um plano técnico detalhado, com arquivos/componentes envolvidos, dependências, riscos, estimativa relativa e critérios de teste. A implementação só deve começar após autorização explícita do usuário.
+
+
+11. ADENDO — LEITURA EM MASSA MANUAL E REGRAS DE ORGANIZAR
+Data do adendo: 24/10/2026
+Este adendo complementa e prevalece sobre qualquer trecho anterior que possa sugerir leitura automática.
+
+11.1 Leitura em massa de QR Codes: nunca iniciar leitura sem comando explícito
+A leitura em massa deve ter um botão explícito para iniciar a leitura, por exemplo “Ler” ou “Iniciar leitura”.
+- Abrir a tela/câmera não deve, por si só, adicionar leituras ao lote.
+- O usuário decide quando iniciar a leitura pelo botão.
+- Incluir controles claros para pausar e retomar.
+- Recomenda-se que a leitura seja ativa apenas enquanto o usuário mantiver o modo de leitura iniciado; a câmera não deve continuar lendo após pausa ou finalização.
+- A tela deve mostrar o resultado capturado em uma lista/área revisável, com possibilidade de remover itens e corrigir ou consultar o conteúdo quando aplicável.
+- Evitar adicionar repetidamente o mesmo código enquanto ele permanece diante da câmera. Informar quando houver duplicata e aplicar a regra de duplicatas definida para o lote.
+- Antes de concluir, permitir revisar os itens capturados.
+
+11.2 Ações depois da leitura em massa
+Depois da revisão, disponibilizar as mesmas categorias de ação previstas para os resultados do Scanear/OCR, adaptadas ao conteúdo:
+- Salvar: registrar os resultados no histórico de leituras, respeitando as regras atuais do histórico e a retenção de sete dias.
+- Baixar: exportar os resultados usando o fluxo padrão da plataforma. Para vários itens, evitar centenas de downloads individuais; oferecer um arquivo consolidado apropriado, por exemplo TXT/CSV, e avaliar ZIP quando houver arquivos por item.
+- Compartilhar: compartilhar um item ou o conjunto revisado, conforme suporte da plataforma.
+- Copiar: copiar um resultado individual ou todos os resultados selecionados, quando aplicável.
+As ações devem ser explícitas; não salvar, baixar nem compartilhar automaticamente ao ler.
+
+11.3 Regra para Scanear/OCR e Organizar
+Organizar deve aplicar a mesma regra de controle explícito usada em Scanear:
+- Nenhum reconhecimento OCR deve ser executado automaticamente apenas por abrir uma imagem, abrir um item salvo ou entrar em Organizar.
+- A leitura/reconhecimento só ocorre quando o usuário pressiona o botão explícito “Scanear” na tela de captura ou de reprocessamento.
+- Resultados OCR salvos em Organizar devem abrir em uma visualização apropriada, com texto editável e ações visíveis: Salvar alterações, Baixar, Compartilhar e Copiar.
+- Se o usuário abrir um texto OCR salvo para consultar ou editar, não executar OCR novamente sem comando explícito.
+- Se houver opção de reprocessar a imagem original, ela deve exigir ação explícita do usuário.
+- Ao editar um resultado já salvo, distinguir “Salvar alterações” de “Salvar como novo” se ambas as opções existirem; evitar duplicar registros sem informar o usuário.
+- Manter a imagem de origem apenas se a política de armazenamento e privacidade aprovada permitir; explicar ao usuário quando ela for guardada.
+- As opções disponíveis em Organizar devem respeitar o tipo de registro. Um texto OCR não deve mostrar ações exclusivas de QR Code, e um QR Code não deve mostrar ações exclusivas de OCR.
+
+11.4 Organizar em grandes quantidades
+- Aplicar seleção individual e múltipla aos registros que suportam ações em lote.
+- Para resultados OCR selecionados, permitir baixar/compartilhar/exportar o texto combinado quando apropriado, mantendo separação clara entre itens.
+- Para QR Codes selecionados, manter as ações de PNG/ZIP/PDF conforme a especificação anterior.
+- Mostrar contagem e resumo antes de executar ações em lote.
+- Operações destrutivas exigem confirmação e devem informar o número de registros afetados.
+- A lista não deve iniciar OCR, leitura de QR ou exportação pesada automaticamente ao ser aberta.
+
+11.5 Critérios de aceitação adicionais
+- A câmera pode ser aberta sem que o sistema registre uma leitura até o usuário apertar o botão de início.
+- Pausar interrompe novas capturas; retomar exige comando explícito.
+- Nenhuma ação de salvar, baixar ou compartilhar ocorre automaticamente.
+- Os resultados da leitura em massa podem ser revisados antes de salvar/exportar.
+- Abrir um resultado OCR salvo em Organizar não inicia novo reconhecimento.
+- O usuário pode editar o texto OCR salvo, salvar as alterações, baixar, copiar e compartilhar.
+- A leitura em massa e o OCR mantêm comportamentos distintos e rótulos claros.
+- As ações disponíveis em Organizar correspondem ao tipo de registro e não executam processos sem solicitação do usuário.

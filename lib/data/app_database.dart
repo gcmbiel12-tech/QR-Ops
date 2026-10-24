@@ -6,7 +6,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart' as sqlite_ffi;
 class AppDatabase {
   AppDatabase({required this.factory, required this.path});
 
-  static const schemaVersion = 4;
+  static const schemaVersion = 5;
 
   // ASCII "QROP", used by SQLite to identify a database owned by QR Ops.
   static const applicationId = 0x51524F50;
@@ -23,7 +23,9 @@ class AppDatabase {
       factory = sqlite_ffi.databaseFactoryFfi;
       final supportDirectory = Platform.environment['LOCALAPPDATA'];
       if (supportDirectory == null || supportDirectory.isEmpty) {
-        throw StateError('A pasta de dados local do usuário não está definida.');
+        throw StateError(
+          'A pasta de dados local do usuário não está definida.',
+        );
       }
       final databaseDirectory = Directory(
         '$supportDirectory${Platform.pathSeparator}QR Ops',
@@ -36,7 +38,9 @@ class AppDatabase {
       final directory = await getDatabasesPath();
       databasePath = '$directory${Platform.pathSeparator}qr_ops.db';
     } else {
-      throw UnsupportedError('O QR Ops está configurado para Android e Windows.');
+      throw UnsupportedError(
+        'O QR Ops está configurado para Android e Windows.',
+      );
     }
 
     return AppDatabase(factory: factory, path: databasePath).open();
@@ -56,7 +60,11 @@ class AppDatabase {
     );
   }
 
-  Future<void> _migrate(Database database, int oldVersion, int newVersion) async {
+  Future<void> _migrate(
+    Database database,
+    int oldVersion,
+    int newVersion,
+  ) async {
     for (var version = oldVersion + 1; version <= newVersion; version++) {
       switch (version) {
         case 1:
@@ -107,6 +115,32 @@ class AppDatabase {
           ''');
           await database.execute(
             'CREATE INDEX qr_sync_outbox_owner_status_idx ON qr_sync_outbox (owner_id, status, created_at_ms)',
+          );
+        case 5:
+          await database.execute(
+            'ALTER TABLE qr_records RENAME TO qr_records_v4',
+          );
+          await database.execute('''
+            CREATE TABLE qr_records (
+              id TEXT PRIMARY KEY NOT NULL,
+              operation_type TEXT NOT NULL CHECK (operation_type IN ('create', 'read', 'ocr')),
+              symbology TEXT NOT NULL,
+              content_type TEXT NOT NULL,
+              content TEXT NOT NULL,
+              created_at_ms INTEGER NOT NULL,
+              name TEXT NOT NULL DEFAULT '',
+              description TEXT NOT NULL DEFAULT '',
+              revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0)
+            )
+          ''');
+          await database.execute('''
+            INSERT INTO qr_records (id, operation_type, symbology, content_type, content, created_at_ms, name, description, revision)
+            SELECT id, operation_type, symbology, content_type, content, created_at_ms, name, description, revision
+            FROM qr_records_v4
+          ''');
+          await database.execute('DROP TABLE qr_records_v4');
+          await database.execute(
+            'CREATE INDEX qr_records_created_at_idx ON qr_records (created_at_ms DESC, id DESC)',
           );
         default:
           throw StateError('Missing SQLite migration for version $version.');

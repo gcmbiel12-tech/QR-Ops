@@ -8,6 +8,7 @@ import '../home/home_page.dart';
 import '../qr_create/qr_create_page.dart';
 import '../qr_create/qr_creation_service.dart';
 import '../qr_scan/qr_scan_page.dart';
+import '../qr_scan/qr_ocr_page.dart';
 import '../qr_history/qr_organize_page.dart';
 
 class _Area {
@@ -23,7 +24,12 @@ class _Area {
 }
 
 class QrOpsShell extends StatefulWidget {
-  const QrOpsShell({super.key, required this.repository, this.authGateway, this.syncService});
+  const QrOpsShell({
+    super.key,
+    required this.repository,
+    this.authGateway,
+    this.syncService,
+  });
 
   final QrRecordRepository repository;
   final QrAuthGateway? authGateway;
@@ -49,6 +55,11 @@ class _QrOpsShellState extends State<QrOpsShell> {
       label: 'Ler',
       icon: Icons.qr_code_scanner_outlined,
       selectedIcon: Icons.qr_code_scanner_rounded,
+    ),
+    _Area(
+      label: 'Scanear',
+      icon: Icons.document_scanner_outlined,
+      selectedIcon: Icons.document_scanner,
     ),
     _Area(
       label: 'Organizar',
@@ -122,10 +133,15 @@ class _QrOpsShellState extends State<QrOpsShell> {
                       onRecordRead: () =>
                           setState(() => _historyRefreshToken++),
                     ),
+                    QrOcrPage(
+                      repository: widget.repository,
+                      onRecordSaved: () =>
+                          setState(() => _historyRefreshToken++),
+                    ),
                     QrOrganizePage(
                       repository: widget.repository,
                       refreshToken: _historyRefreshToken,
-                      isActive: _selectedIndex == 3,
+                      isActive: _selectedIndex == 4,
                     ),
                   ],
                 ),

@@ -8,7 +8,8 @@ import '../domain/sync_owner_context.dart';
 
 const _syncUuid = Uuid();
 
-class IndexedDbQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
+class IndexedDbQrRecordRepository
+    implements QrRecordRepository, QrSyncLocalStore {
   IndexedDbQrRecordRepository({
     required this.factory,
     this.databaseName = defaultDatabaseName,
@@ -16,7 +17,7 @@ class IndexedDbQrRecordRepository implements QrRecordRepository, QrSyncLocalStor
   });
 
   static const defaultDatabaseName = 'qr_ops_history';
-  static const _databaseVersion = 2;
+  static const _databaseVersion = 3;
   static const _storeName = 'qr_records';
   static const _outboxStoreName = 'qr_sync_outbox';
 
@@ -32,8 +33,15 @@ class IndexedDbQrRecordRepository implements QrRecordRepository, QrSyncLocalStor
       databaseName,
       version: _databaseVersion,
       onUpgradeNeeded: (event) {
-        if (event.oldVersion < 1) event.database.createObjectStore(_storeName, keyPath: 'id');
-        if (event.oldVersion < 2) event.database.createObjectStore(_outboxStoreName, keyPath: 'storage_key');
+        if (event.oldVersion < 1) {
+          event.database.createObjectStore(_storeName, keyPath: 'id');
+        }
+        if (event.oldVersion < 2) {
+          event.database.createObjectStore(
+            _outboxStoreName,
+            keyPath: 'storage_key',
+          );
+        }
       },
     );
     _database = opening;
@@ -47,16 +55,34 @@ class IndexedDbQrRecordRepository implements QrRecordRepository, QrSyncLocalStor
 
   @override
   Future<QrRecord> insert(QrRecord record) async {
-    if (record.id.trim().isEmpty) throw ArgumentError.value(record.id, 'record.id');
-    if (record.content.trim().isEmpty) throw ArgumentError.value(record.content, 'record.content');
+    if (record.id.trim().isEmpty) {
+      throw ArgumentError.value(record.id, 'record.id');
+    }
+    if (record.content.trim().isEmpty) {
+      throw ArgumentError.value(record.content, 'record.content');
+    }
     final database = await _openDatabase();
-    final transaction = database.transaction([_storeName, _outboxStoreName], idbModeReadWrite);
+    final transaction = database.transaction([
+      _storeName,
+      _outboxStoreName,
+    ], idbModeReadWrite);
     try {
       await transaction.objectStore(_storeName).add(_toRow(record));
       final owner = syncOwnerContext?.userId;
-      if (owner != null) {
-        final base = await _nextBaseRevision(transaction, owner, record.id, record.revision);
-        await _enqueue(transaction, owner: owner, record: record, type: QrSyncMutationType.upsert, baseRevision: base);
+      if (owner != null && record.operation != QrRecordOperation.ocr) {
+        final base = await _nextBaseRevision(
+          transaction,
+          owner,
+          record.id,
+          record.revision,
+        );
+        await _enqueue(
+          transaction,
+          owner: owner,
+          record: record,
+          type: QrSyncMutationType.upsert,
+          baseRevision: base,
+        );
       }
       await transaction.completed;
       return record;
@@ -68,7 +94,9 @@ class IndexedDbQrRecordRepository implements QrRecordRepository, QrSyncLocalStor
 
   @override
   Future<List<QrRecord>> listLatest({int limit = 100}) async {
-    if (limit < 1) throw ArgumentError.value(limit, 'limit', 'Must be positive.');
+    if (limit < 1) {
+      throw ArgumentError.value(limit, 'limit', 'Must be positive.');
+    }
     final database = await _openDatabase();
     final transaction = database.transaction(_storeName, idbModeReadOnly);
     try {
@@ -103,7 +131,10 @@ class IndexedDbQrRecordRepository implements QrRecordRepository, QrSyncLocalStor
   @override
   Future<bool> deleteById(String id) async {
     final database = await _openDatabase();
-    final transaction = database.transaction([_storeName, _outboxStoreName], idbModeReadWrite);
+    final transaction = database.transaction([
+      _storeName,
+      _outboxStoreName,
+    ], idbModeReadWrite);
     final records = transaction.objectStore(_storeName);
     try {
       final existing = await records.getObject(id);
@@ -113,9 +144,21 @@ class IndexedDbQrRecordRepository implements QrRecordRepository, QrSyncLocalStor
       }
       final record = _fromRow(existing);
       final owner = syncOwnerContext?.userId;
-      if (owner != null) {
-        final base = await _nextBaseRevision(transaction, owner, record.id, record.revision);
-        await _enqueue(transaction, owner: owner, recordId: record.id, type: QrSyncMutationType.delete, baseRevision: base, changedAt: DateTime.now().toUtc());
+      if (owner != null && record.operation != QrRecordOperation.ocr) {
+        final base = await _nextBaseRevision(
+          transaction,
+          owner,
+          record.id,
+          record.revision,
+        );
+        await _enqueue(
+          transaction,
+          owner: owner,
+          recordId: record.id,
+          type: QrSyncMutationType.delete,
+          baseRevision: base,
+          changedAt: DateTime.now().toUtc(),
+        );
       }
       await records.delete(id);
       await transaction.completed;
@@ -129,7 +172,10 @@ class IndexedDbQrRecordRepository implements QrRecordRepository, QrSyncLocalStor
   @override
   Future<bool> updateById(QrRecord record) async {
     final database = await _openDatabase();
-    final transaction = database.transaction([_storeName, _outboxStoreName], idbModeReadWrite);
+    final transaction = database.transaction([
+      _storeName,
+      _outboxStoreName,
+    ], idbModeReadWrite);
     final store = transaction.objectStore(_storeName);
     try {
       final existing = await store.getObject(record.id);
@@ -141,9 +187,20 @@ class IndexedDbQrRecordRepository implements QrRecordRepository, QrSyncLocalStor
       final preserved = record.withRevision(old.revision);
       await store.put(_toRow(preserved));
       final owner = syncOwnerContext?.userId;
-      if (owner != null) {
-        final base = await _nextBaseRevision(transaction, owner, preserved.id, old.revision);
-        await _enqueue(transaction, owner: owner, record: preserved, type: QrSyncMutationType.upsert, baseRevision: base);
+      if (owner != null && preserved.operation != QrRecordOperation.ocr) {
+        final base = await _nextBaseRevision(
+          transaction,
+          owner,
+          preserved.id,
+          old.revision,
+        );
+        await _enqueue(
+          transaction,
+          owner: owner,
+          record: preserved,
+          type: QrSyncMutationType.upsert,
+          baseRevision: base,
+        );
       }
       await transaction.completed;
       return true;
@@ -156,7 +213,10 @@ class IndexedDbQrRecordRepository implements QrRecordRepository, QrSyncLocalStor
   @override
   Future<int> pruneReadHistoryBefore(DateTime cutoffUtc) async {
     final database = await _openDatabase();
-    final transaction = database.transaction([_storeName, _outboxStoreName], idbModeReadWrite);
+    final transaction = database.transaction([
+      _storeName,
+      _outboxStoreName,
+    ], idbModeReadWrite);
     final store = transaction.objectStore(_storeName);
     var deleted = 0;
     try {
@@ -165,11 +225,24 @@ class IndexedDbQrRecordRepository implements QrRecordRepository, QrSyncLocalStor
       final owner = syncOwnerContext?.userId;
       for (final value in rows) {
         final row = Map<Object?, Object?>.from(value as Map);
-        if (row['operation_type'] == 'read' && row['created_at_ms'] is num && (row['created_at_ms'] as num) < cutoffMs) {
+        if (row['operation_type'] == 'read' &&
+            row['created_at_ms'] is num &&
+            (row['created_at_ms'] as num) < cutoffMs) {
           final record = _fromRow(row);
           if (owner != null) {
-            final base = await _nextBaseRevision(transaction, owner, record.id, record.revision);
-            await _enqueue(transaction, owner: owner, recordId: record.id, type: QrSyncMutationType.delete, baseRevision: base);
+            final base = await _nextBaseRevision(
+              transaction,
+              owner,
+              record.id,
+              record.revision,
+            );
+            await _enqueue(
+              transaction,
+              owner: owner,
+              recordId: record.id,
+              type: QrSyncMutationType.delete,
+              baseRevision: base,
+            );
           }
           await store.delete(record.id);
           deleted++;
@@ -186,7 +259,10 @@ class IndexedDbQrRecordRepository implements QrRecordRepository, QrSyncLocalStor
   @override
   Future<int> deleteAllReadHistory() async {
     final database = await _openDatabase();
-    final transaction = database.transaction([_storeName, _outboxStoreName], idbModeReadWrite);
+    final transaction = database.transaction([
+      _storeName,
+      _outboxStoreName,
+    ], idbModeReadWrite);
     final store = transaction.objectStore(_storeName);
     var deleted = 0;
     try {
@@ -197,8 +273,19 @@ class IndexedDbQrRecordRepository implements QrRecordRepository, QrSyncLocalStor
         if (row['operation_type'] == 'read') {
           final record = _fromRow(row);
           if (owner != null) {
-            final base = await _nextBaseRevision(transaction, owner, record.id, record.revision);
-            await _enqueue(transaction, owner: owner, recordId: record.id, type: QrSyncMutationType.delete, baseRevision: base);
+            final base = await _nextBaseRevision(
+              transaction,
+              owner,
+              record.id,
+              record.revision,
+            );
+            await _enqueue(
+              transaction,
+              owner: owner,
+              recordId: record.id,
+              type: QrSyncMutationType.delete,
+              baseRevision: base,
+            );
           }
           await store.delete(record.id);
           deleted++;
@@ -212,13 +299,23 @@ class IndexedDbQrRecordRepository implements QrRecordRepository, QrSyncLocalStor
     }
   }
 
-  Future<int?> _nextBaseRevision(Transaction transaction, String owner, String recordId, int revision) async {
+  Future<int?> _nextBaseRevision(
+    Transaction transaction,
+    String owner,
+    String recordId,
+    int revision,
+  ) async {
     final rows = await transaction.objectStore(_outboxStoreName).getAll();
     final pendingUpserts = rows.where((value) {
       final row = Map<Object?, Object?>.from(value as Map);
-      return row['owner_id'] == owner && row['record_id'] == recordId && row['status'] == 'pending' && row['mutation_type'] == 'upsert';
+      return row['owner_id'] == owner &&
+          row['record_id'] == recordId &&
+          row['status'] == 'pending' &&
+          row['mutation_type'] == 'upsert';
     }).length;
-    return revision == 0 && pendingUpserts == 0 ? null : revision + pendingUpserts;
+    return revision == 0 && pendingUpserts == 0
+        ? null
+        : revision + pendingUpserts;
   }
 
   Future<void> _enqueue(
@@ -230,18 +327,26 @@ class IndexedDbQrRecordRepository implements QrRecordRepository, QrSyncLocalStor
     String? recordId,
     DateTime? changedAt,
   }) async {
-    final requestedMs = (changedAt ?? DateTime.now()).toUtc().millisecondsSinceEpoch;
-    final existingRows = await transaction.objectStore(_outboxStoreName).getAll();
+    final requestedMs = (changedAt ?? DateTime.now())
+        .toUtc()
+        .millisecondsSinceEpoch;
+    final existingRows = await transaction
+        .objectStore(_outboxStoreName)
+        .getAll();
     var previousMs = -1;
     for (final value in existingRows) {
       final row = Map<Object?, Object?>.from(value as Map);
-      if (row['owner_id'] == owner && row['record_id'] == (recordId ?? record!.id) && row['created_at_ms'] is num) {
+      if (row['owner_id'] == owner &&
+          row['record_id'] == (recordId ?? record!.id) &&
+          row['created_at_ms'] is num) {
         final candidate = (row['created_at_ms'] as num).toInt();
         if (candidate > previousMs) previousMs = candidate;
       }
     }
     final now = DateTime.fromMillisecondsSinceEpoch(
-      previousMs < 0 ? requestedMs : (requestedMs > previousMs ? requestedMs : previousMs + 1),
+      previousMs < 0
+          ? requestedMs
+          : (requestedMs > previousMs ? requestedMs : previousMs + 1),
       isUtc: true,
     );
     final mutation = QrSyncMutation(
@@ -280,7 +385,10 @@ class IndexedDbQrRecordRepository implements QrRecordRepository, QrSyncLocalStor
   }
 
   @override
-  Future<void> applyRemoteDelete(String recordId, {required int revision}) async {
+  Future<void> applyRemoteDelete(
+    String recordId, {
+    required int revision,
+  }) async {
     final database = await _openDatabase();
     final transaction = database.transaction(_storeName, idbModeReadWrite);
     final store = transaction.objectStore(_storeName);
@@ -304,7 +412,8 @@ class IndexedDbQrRecordRepository implements QrRecordRepository, QrSyncLocalStor
     try {
       final existing = await store.getObject(id);
       if (existing != null) {
-        final row = Map<Object?, Object?>.from(existing as Map)..['revision'] = revision;
+        final row = Map<Object?, Object?>.from(existing as Map)
+          ..['revision'] = revision;
         await store.put(row);
       }
       await transaction.completed;
@@ -339,6 +448,7 @@ class IndexedDbQrRecordRepository implements QrRecordRepository, QrSyncLocalStor
     'operation_type': switch (record.operation) {
       QrRecordOperation.create => 'create',
       QrRecordOperation.read => 'read',
+      QrRecordOperation.ocr => 'ocr',
     },
     'symbology': record.symbology,
     'content_type': record.contentType,
@@ -350,15 +460,22 @@ class IndexedDbQrRecordRepository implements QrRecordRepository, QrSyncLocalStor
   };
 
   QrRecord _fromRow(Object value) {
-    if (value is! Map) throw const FormatException('Registro inválido no histórico IndexedDB.');
+    if (value is! Map) {
+      throw const FormatException('Registro inválido no histórico IndexedDB.');
+    }
     final row = Map<Object?, Object?>.from(value);
     final operation = switch (row['operation_type']) {
       'create' => QrRecordOperation.create,
       'read' => QrRecordOperation.read,
-      final stored => throw FormatException('Operação desconhecida no histórico: $stored'),
+      'ocr' => QrRecordOperation.ocr,
+      final stored => throw FormatException(
+        'Operação desconhecida no histórico: $stored',
+      ),
     };
     final timestamp = row['created_at_ms'];
-    if (timestamp is! num) throw const FormatException('Data inválida no histórico IndexedDB.');
+    if (timestamp is! num) {
+      throw const FormatException('Data inválida no histórico IndexedDB.');
+    }
     return QrRecord(
       id: _requiredString(row, 'id'),
       operation: operation,
@@ -366,15 +483,22 @@ class IndexedDbQrRecordRepository implements QrRecordRepository, QrSyncLocalStor
       contentType: _requiredString(row, 'content_type'),
       content: _requiredString(row, 'content'),
       name: row['name'] is String ? row['name'] as String : '',
-      description: row['description'] is String ? row['description'] as String : '',
-      createdAt: DateTime.fromMillisecondsSinceEpoch(timestamp.toInt(), isUtc: true),
+      description: row['description'] is String
+          ? row['description'] as String
+          : '',
+      createdAt: DateTime.fromMillisecondsSinceEpoch(
+        timestamp.toInt(),
+        isUtc: true,
+      ),
       revision: row['revision'] is num ? (row['revision'] as num).toInt() : 0,
     );
   }
 
   String _requiredString(Map<Object?, Object?> row, String key) {
     final value = row[key];
-    if (value is! String) throw FormatException('Campo inválido no histórico IndexedDB: $key.');
+    if (value is! String) {
+      throw FormatException('Campo inválido no histórico IndexedDB: $key.');
+    }
     return value;
   }
 }

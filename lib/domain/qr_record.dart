@@ -1,6 +1,6 @@
 import 'package:uuid/uuid.dart';
 
-enum QrRecordOperation { create, read }
+enum QrRecordOperation { create, read, ocr }
 
 const _uuid = Uuid();
 
@@ -54,6 +54,22 @@ class QrRecord {
       content: content,
       name: name,
       description: description,
+      createdAt: (createdAt ?? DateTime.now()).toUtc(),
+    );
+  }
+
+  factory QrRecord.ocr({
+    required String content,
+    String name = '',
+    DateTime? createdAt,
+  }) {
+    return QrRecord(
+      id: _uuid.v4(),
+      operation: QrRecordOperation.ocr,
+      symbology: 'text',
+      contentType: 'ocr_text',
+      content: content,
+      name: name,
       createdAt: (createdAt ?? DateTime.now()).toUtc(),
     );
   }

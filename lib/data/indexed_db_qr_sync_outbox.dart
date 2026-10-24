@@ -10,7 +10,9 @@ class IndexedDbQrSyncOutbox implements PersistentQrSyncOutbox {
     this.databaseName = 'qr_ops_history',
   });
 
-  static const _databaseVersion = 2;
+  // Keep this aligned with IndexedDbQrRecordRepository so opening the
+  // outbox never attempts to downgrade a database already upgraded to v3.
+  static const _databaseVersion = 3;
   static const _storeName = 'qr_sync_outbox';
 
   final IdbFactory factory;
@@ -77,20 +79,26 @@ class IndexedDbQrSyncOutbox implements PersistentQrSyncOutbox {
     try {
       final rows = await transaction.objectStore(_storeName).getAll();
       await transaction.completed;
-      final mutations = rows
-          .map((row) => QrSyncMutation.fromStorageMap(
-                Map<Object?, Object?>.from(row as Map),
-              ))
-          .where((mutation) => mutation.ownerId == ownerId && !mutation.isConflict)
-          .toList()
-        ..sort((a, b) {
-          final byDate = (a.createdAt ?? a.changedAt).compareTo(
-            b.createdAt ?? b.changedAt,
-          );
-          return byDate == 0
-              ? a.idempotencyKey.compareTo(b.idempotencyKey)
-              : byDate;
-        });
+      final mutations =
+          rows
+              .map(
+                (row) => QrSyncMutation.fromStorageMap(
+                  Map<Object?, Object?>.from(row as Map),
+                ),
+              )
+              .where(
+                (mutation) =>
+                    mutation.ownerId == ownerId && !mutation.isConflict,
+              )
+              .toList()
+            ..sort((a, b) {
+              final byDate = (a.createdAt ?? a.changedAt).compareTo(
+                b.createdAt ?? b.changedAt,
+              );
+              return byDate == 0
+                  ? a.idempotencyKey.compareTo(b.idempotencyKey)
+                  : byDate;
+            });
       return List.unmodifiable(mutations.take(limit));
     } on Object {
       await _finishAfterFailure(transaction);
@@ -142,7 +150,8 @@ class IndexedDbQrSyncOutbox implements PersistentQrSyncOutbox {
         if (existing == null) continue;
         final row = Map<Object?, Object?>.from(existing as Map);
         if (row['owner_id'] != ownerId || row['status'] == 'conflict') continue;
-        row['attempt_count'] = ((row['attempt_count'] as num?)?.toInt() ?? 0) + 1;
+        row['attempt_count'] =
+            ((row['attempt_count'] as num?)?.toInt() ?? 0) + 1;
         row['last_attempt_at_ms'] = attemptedAt.toUtc().millisecondsSinceEpoch;
         row['last_error'] = error;
         await store.put({...row, 'storage_key': storageKey});
@@ -155,7 +164,10 @@ class IndexedDbQrSyncOutbox implements PersistentQrSyncOutbox {
   }
 
   @override
-  Future<void> markConflicts(String ownerId, Set<String> idempotencyKeys) async {
+  Future<void> markConflicts(
+    String ownerId,
+    Set<String> idempotencyKeys,
+  ) async {
     if (idempotencyKeys.isEmpty) return;
     final database = await _openDatabase();
     final transaction = database.transaction(_storeName, idbModeReadWrite);
@@ -186,7 +198,11 @@ class IndexedDbQrSyncOutbox implements PersistentQrSyncOutbox {
       final rows = await transaction.objectStore(_storeName).getAll();
       await transaction.completed;
       return rows
-          .map((value) => QrSyncMutation.fromStorageMap(Map<Object?, Object?>.from(value as Map)))
+          .map(
+            (value) => QrSyncMutation.fromStorageMap(
+              Map<Object?, Object?>.from(value as Map),
+            ),
+          )
           .where((mutation) => mutation.ownerId == ownerId)
           .toList(growable: false);
     } on Object {

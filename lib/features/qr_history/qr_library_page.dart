@@ -3,9 +3,10 @@ import 'package:flutter/services.dart';
 
 import '../../domain/qr_record.dart';
 import '../../domain/qr_record_repository.dart';
+import '../qr_create/qr_batch_export_service.dart';
 import '../qr_create/qr_code_download.dart';
-import '../qr_create/qr_code_preview.dart';
 import '../qr_create/qr_creation_service.dart';
+import '../qr_create/qr_code_preview.dart';
 import '../qr_create/qr_png_exporter.dart';
 
 /// Saved QR Codes are records explicitly created by the user; scanned items
@@ -29,6 +30,8 @@ class _QrLibraryPageState extends State<QrLibraryPage> {
   String _query = '';
   String _type = 'all';
   bool _oldestFirst = false;
+  String _exportSize = 'Médio';
+  final Set<String> _selectedIds = {};
 
   @override
   void initState() {
@@ -52,7 +55,9 @@ class _QrLibraryPageState extends State<QrLibraryPage> {
         .toList(growable: false);
   }
 
-  void _reload() => setState(() => _records = _load());
+  void _reload() => setState(() {
+    _records = _load();
+  });
 
   Future<void> _copy(QrRecord record) async {
     await Clipboard.setData(ClipboardData(text: record.content));
@@ -278,6 +283,118 @@ class _QrLibraryPageState extends State<QrLibraryPage> {
     }
   }
 
+  Future<void> _exportLibrary(
+    List<QrRecord> records, {
+    required bool selectedOnly,
+    required String format,
+  }) async {
+    final target = records
+        .where((record) => !selectedOnly || _selectedIds.contains(record.id))
+        .toList();
+    if (target.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selecione ao menos um QR Code para exportar.'),
+        ),
+      );
+      return;
+    }
+    try {
+      final service = QrCreationService(widget.repository);
+      const exporter = QrBatchExportService();
+      final contents = target
+          .map((record) => record.content)
+          .toList(growable: false);
+      if (format == 'zip') {
+        await exporter.saveZip(contents, service, size: _exportSize);
+      } else {
+        await exporter.savePdf(
+          contents,
+          service,
+          size: _exportSize,
+          labelSheet: format == 'labels',
+        );
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${target.length} QR Codes exportados.')),
+        );
+      }
+    } on Object {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Não foi possível exportar os QR Codes.'),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _copySelected(List<QrRecord> records) async {
+    final selected = records
+        .where((record) => _selectedIds.contains(record.id))
+        .toList();
+    if (selected.isEmpty) return;
+    await Clipboard.setData(
+      ClipboardData(text: selected.map((record) => record.content).join('\\n')),
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${selected.length} conteúdos copiados.')),
+    );
+  }
+
+  Future<void> _deleteSelected(List<QrRecord> records) async {
+    final selected = records
+        .where((record) => _selectedIds.contains(record.id))
+        .toList();
+    if (selected.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Excluir QR Codes selecionados?'),
+        content: Text(
+          '${selected.length} QR Codes serão removidos da biblioteca local. O histórico de leituras será preservado.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Excluir selecionados'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    var deleted = 0;
+    final failures = <String>[];
+    for (final record in selected) {
+      try {
+        if (await widget.repository.deleteById(record.id)) {
+          deleted++;
+        } else {
+          failures.add(record.id);
+        }
+      } on Object {
+        failures.add(record.id);
+      }
+    }
+    if (!mounted) return;
+    setState(() => _selectedIds.removeAll(selected.map((record) => record.id)));
+    _reload();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '$deleted de ${selected.length} itens excluídos.${failures.isEmpty ? '' : ' Falhas: ${failures.length}.'}',
+        ),
+      ),
+    );
+  }
+
   String _date(DateTime value) {
     final local = value.toLocal();
     String two(int n) => n.toString().padLeft(2, '0');
@@ -419,72 +536,241 @@ class _QrLibraryPageState extends State<QrLibraryPage> {
                           (a, b) => a.createdAt.compareTo(b.createdAt),
                         );
                       }
-                      return ListView.separated(
-                        itemCount: filtered.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 6),
-                        itemBuilder: (context, index) {
-                          final record = filtered[index];
-                          return Card(
-                            child: ListTile(
-                              leading: const Icon(Icons.qr_code_2_rounded),
-                              title: Text(
-                                record.name.trim().isEmpty
-                                    ? record.content
-                                    : record.name,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
+                      final selectedCount = filtered
+                          .where((record) => _selectedIds.contains(record.id))
+                          .length;
+                      return Column(
+                        children: [
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Text(
+                                '$selectedCount selecionados de ${filtered.length}',
                               ),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    '${record.contentType.toUpperCase()} • ${_date(record.createdAt)}',
+                              TextButton(
+                                key: const ValueKey(
+                                  'qr-library-select-filtered',
+                                ),
+                                onPressed: () => setState(() {
+                                  if (selectedCount == filtered.length) {
+                                    _selectedIds.removeAll(
+                                      filtered.map((record) => record.id),
+                                    );
+                                  } else {
+                                    _selectedIds.addAll(
+                                      filtered.map((record) => record.id),
+                                    );
+                                  }
+                                }),
+                                child: Text(
+                                  selectedCount == filtered.length
+                                      ? 'Desmarcar resultados'
+                                      : 'Selecionar resultados filtrados',
+                                ),
+                              ),
+                              DropdownButton<String>(
+                                value: _exportSize,
+                                onChanged: (value) => setState(
+                                  () => _exportSize = value ?? 'Médio',
+                                ),
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'Pequeno',
+                                    child: Text('Pequeno'),
                                   ),
-                                  if (record.description.trim().isNotEmpty)
-                                    Text(
-                                      record.description,
+                                  DropdownMenuItem(
+                                    value: 'Médio',
+                                    child: Text('Médio'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'Grande',
+                                    child: Text('Grande'),
+                                  ),
+                                ],
+                              ),
+                              PopupMenuButton<String>(
+                                tooltip: 'Exportar resultados filtrados',
+                                onSelected: (format) => _exportLibrary(
+                                  filtered,
+                                  selectedOnly: false,
+                                  format: format,
+                                ),
+                                itemBuilder: (_) => const [
+                                  PopupMenuItem(
+                                    value: 'zip',
+                                    child: Text('Exportar todos em ZIP'),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'labels',
+                                    child: Text(
+                                      'Exportar todos em PDF de etiquetas',
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'report',
+                                    child: Text(
+                                      'Exportar todos em PDF relatório',
+                                    ),
+                                  ),
+                                ],
+                                child: const Padding(
+                                  padding: EdgeInsets.all(8),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.download_outlined),
+                                      Text('Exportar todos'),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              if (selectedCount > 0) ...[
+                                TextButton.icon(
+                                  onPressed: () => _copySelected(filtered),
+                                  icon: const Icon(Icons.copy),
+                                  label: const Text('Copiar conteúdos'),
+                                ),
+                                TextButton.icon(
+                                  onPressed: () => _deleteSelected(filtered),
+                                  icon: const Icon(Icons.delete_outline),
+                                  label: const Text('Excluir selecionados'),
+                                ),
+                                PopupMenuButton<String>(
+                                  tooltip: 'Exportar selecionados',
+                                  onSelected: (format) => _exportLibrary(
+                                    filtered,
+                                    selectedOnly: true,
+                                    format: format,
+                                  ),
+                                  itemBuilder: (_) => const [
+                                    PopupMenuItem(
+                                      value: 'zip',
+                                      child: Text('ZIP selecionados'),
+                                    ),
+                                    PopupMenuItem(
+                                      value: 'labels',
+                                      child: Text('PDF etiquetas selecionados'),
+                                    ),
+                                    PopupMenuItem(
+                                      value: 'report',
+                                      child: Text('PDF relatório selecionados'),
+                                    ),
+                                  ],
+                                  child: const Padding(
+                                    padding: EdgeInsets.all(8),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.download_outlined),
+                                        Text('Exportar selecionados'),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Expanded(
+                            child: ListView.separated(
+                              itemCount: filtered.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(height: 6),
+                              itemBuilder: (context, index) {
+                                final record = filtered[index];
+                                return Card(
+                                  child: ListTile(
+                                    leading: Checkbox(
+                                      key: ValueKey(
+                                        'qr-library-select-${record.id}',
+                                      ),
+                                      value: _selectedIds.contains(record.id),
+                                      onChanged: (value) => setState(() {
+                                        if (value ?? false) {
+                                          _selectedIds.add(record.id);
+                                        } else {
+                                          _selectedIds.remove(record.id);
+                                        }
+                                      }),
+                                    ),
+                                    title: Text(
+                                      record.name.trim().isEmpty
+                                          ? record.content
+                                          : record.name,
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                     ),
-                                ],
-                              ),
-                              onTap: () => _details(record),
-                              trailing: PopupMenuButton<String>(
-                                tooltip: 'Acoes do QR Code',
-                                onSelected: (action) {
-                                  if (action == 'copy') _copy(record);
-                                  if (action == 'details') _details(record);
-                                  if (action == 'edit') _editMetadata(record);
-                                  if (action == 'export') _exportPng(record);
-                                  if (action == 'delete') _delete(record);
-                                },
-                                itemBuilder: (_) => const [
-                                  PopupMenuItem(
-                                    value: 'details',
-                                    child: Text('Ver detalhes'),
-                                  ),
-                                  PopupMenuItem(
-                                    value: 'edit',
-                                    child: Text('Editar nome e descricao'),
-                                  ),
+                                    subtitle: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          '${record.contentType.toUpperCase()} • ${_date(record.createdAt)}',
+                                        ),
+                                        if (record.description
+                                            .trim()
+                                            .isNotEmpty)
+                                          Text(
+                                            record.description,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                      ],
+                                    ),
+                                    onTap: () => _details(record),
+                                    trailing: PopupMenuButton<String>(
+                                      tooltip: 'Acoes do QR Code',
+                                      onSelected: (action) {
+                                        if (action == 'copy') {
+                                          _copy(record);
+                                        }
+                                        if (action == 'details') {
+                                          _details(record);
+                                        }
+                                        if (action == 'edit') {
+                                          _editMetadata(record);
+                                        }
+                                        if (action == 'export') {
+                                          _exportPng(record);
+                                        }
+                                        if (action == 'delete') {
+                                          _delete(record);
+                                        }
+                                      },
+                                      itemBuilder: (_) => const [
+                                        PopupMenuItem(
+                                          value: 'details',
+                                          child: Text('Ver detalhes'),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'edit',
+                                          child: Text(
+                                            'Editar nome e descricao',
+                                          ),
+                                        ),
 
-                                  PopupMenuItem(
-                                    value: 'copy',
-                                    child: Text('Copiar conteudo'),
+                                        PopupMenuItem(
+                                          value: 'copy',
+                                          child: Text('Copiar conteudo'),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'export',
+                                          child: Text('Exportar PNG'),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'delete',
+                                          child: Text('Excluir'),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                  PopupMenuItem(
-                                    value: 'export',
-                                    child: Text('Exportar PNG'),
-                                  ),
-                                  PopupMenuItem(
-                                    value: 'delete',
-                                    child: Text('Excluir'),
-                                  ),
-                                ],
-                              ),
+                                );
+                              },
                             ),
-                          );
-                        },
+                          ),
+                        ],
                       );
                     },
                   ),

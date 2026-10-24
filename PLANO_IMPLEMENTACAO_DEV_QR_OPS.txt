@@ -1,0 +1,237 @@
+QR OPS — PLANO DE IMPLEMENTAÇÃO PARA O DEV
+Versão: 1.0
+Data: 24/10/2026
+Finalidade: orientar o Dev para analisar, planejar e implementar incrementalmente as mudanças propostas.
+Documento de referência obrigatório:
+C:\Users\gcmbi\Documents\Projetos\QR Ops\PLANO_MUDANCAS_PROPOSTAS_QR_OPS.txt
+
+INSTRUÇÃO PRINCIPAL
+Leia integralmente o documento PLANO_MUDANCAS_PROPOSTAS_QR_OPS.txt antes de iniciar. Ele é a fonte principal dos requisitos funcionais e das decisões já discutidas com o usuário. Este plano orienta a execução técnica; não substitui nem contradiz o documento de referência.
+
+O usuário autoriza que o Dev continue o trabalho de análise e implementação por etapas, sem interromper para pedir aprovação a cada tarefa. Pare e peça orientação somente diante de uma emergência ou bloqueio crítico: risco real de perda/corrupção de dados, exposição de segredos, alteração de produção, ação destrutiva irreversível, ambiguidade que impeça proteger a integridade dos dados ou dependência externa que exija autorização do usuário. Para dúvidas técnicas de baixo risco, investigue, escolha a alternativa mais segura e documente a decisão.
+
+Não interprete esta autorização como permissão para modificar produção, publicar, comprar serviços ou executar operações Git remotas. Os limites de segurança abaixo continuam obrigatórios.
+
+1. ESTADO INICIAL E PRESERVAÇÃO
+Antes de editar:
+- Inspecione o estado do Git, branch, alterações rastreadas e arquivos não rastreados.
+- Leia o documento de planejamento e os componentes atuais de navegação, criação, leitura, OCR (se houver), Organizar, armazenamento, exportação e sincronização.
+- Identifique o que já existe e evite reimplementar funcionalidades existentes.
+- Preserve todas as alterações locais preexistentes.
+- Preserve obrigatoriamente:
+  - fix-scan-copy.ps1
+  - serve-qr-ops.ps1
+- Não reverta arquivos do usuário nem use comandos destrutivos para “limpar” o repositório.
+- Faça um inventário inicial e registre-o no relatório final.
+
+2. LIMITES OPERACIONAIS
+Permitido:
+- Analisar arquitetura, dependências, compatibilidade, licenças, riscos e alternativas.
+- Criar ou modificar código e testes localmente de forma incremental.
+- Criar migrações apenas para o ambiente local de desenvolvimento quando necessárias e cobertas por testes.
+- Executar testes, análise estática e builds locais.
+- Atualizar documentação técnica relacionada às mudanças.
+
+Não permitido sem autorização explícita adicional:
+- Alterar Supabase remoto ou de produção.
+- Aplicar migrações remotas.
+- Fazer commit, push, deploy ou publicação.
+- Apagar dados reais, limpar o repositório ou remover arquivos não rastreados preexistentes.
+- Introduzir serviços pagos ou enviar imagens/textos do usuário a serviços externos sem consentimento claro.
+- Expor tokens, chaves ou credenciais em logs, relatórios ou arquivos versionados.
+
+3. ORDEM DE EXECUÇÃO E FASES
+
+FASE 0 — ANÁLISE TÉCNICA OBRIGATÓRIA
+- Ler todo o documento PLANO_MUDANCAS_PROPOSTAS_QR_OPS.txt.
+- Mapear a arquitetura atual e as dependências para:
+  - navegação principal;
+  - criação individual de QR;
+  - leitura atual de QR;
+  - persistência SQLite e IndexedDB;
+  - Organizar, biblioteca e histórico;
+  - exportação PNG/PDF, compartilhamento e download;
+  - autenticação e sincronização;
+  - compatibilidade Web, Windows e Android.
+- Avaliar bibliotecas de OCR, câmera, PDF, ZIP e compartilhamento, incluindo compatibilidade, manutenção, licenças, limitações e processamento local versus remoto.
+- Não adicionar dependências sem justificar o motivo e a compatibilidade.
+- Criar uma matriz de impacto, riscos e testes.
+- Prosseguir diretamente à implementação de baixo risco quando a análise for suficiente. Não parar apenas para solicitar aprovação rotineira.
+- Se uma dependência ou limitação impedir uma funcionalidade em determinada plataforma, investigar alternativas e documentar a decisão antes de aceitar a limitação.
+
+FASE 1 — ORGANIZAR PARA GRANDES QUANTIDADES
+Priorizar uma base de gerenciamento que sirva às funções existentes e às novas:
+- Pesquisa e filtros eficientes.
+- Categorias/tipos claros: QR Codes salvos, histórico de leituras, resultados OCR e, quando implementados, lotes.
+- Seleção individual, múltipla e seleção de todos os resultados filtrados.
+- Barra de ações em lote com quantidade selecionada.
+- Ações adequadas ao tipo de item.
+- Paginação ou carregamento progressivo conforme a arquitetura existente.
+- Confirmação de exclusões em lote e resumo de quantos itens serão afetados.
+- Progresso, cancelamento seguro e resumo de falhas parciais para operações longas.
+- Evitar renderizar milhares de QR images ao mesmo tempo.
+- Abrir registros sem iniciar leitura, OCR, exportação ou qualquer processamento automático.
+- Preservar regras atuais de histórico e retenção.
+- Não criar um sistema paralelo de armazenamento; integrar com os modelos e repositórios existentes.
+
+FASE 2 — CRIAÇÃO DE QR CODES EM MASSA
+- Adicionar “Criação em massa” à área Criar sem remover a criação individual.
+- Aceitar entradas separadas por linha, vírgula e ponto e vírgula.
+- Suportar intervalos numéricos, por exemplo 1001-1020.
+- Incluir a opção “Tratar hífen como parte do código (não como intervalo)”.
+- Preservar códigos alfanuméricos como ABC-001.
+- Validar intervalos invertidos, entradas vazias, limites e entradas inválidas.
+- Preservar zeros à esquerda quando a interpretação for inequívoca.
+- Usar um limite inicial sugerido de 500 itens por lote, configurável/ajustável após testes de desempenho; informar claramente o limite e não travar a interface.
+- Mostrar prévia antes de gerar, com identificação abaixo de cada QR, total, seleção individual, selecionar todos, edição/remoção e avisos de duplicatas.
+- Avisar sobre duplicatas e permitir decisão explícita do usuário; não remover silenciosamente.
+- Reutilizar as regras e a implementação de geração já existentes.
+- Permitir escolher o tamanho do QR: pequeno, médio (padrão), grande e avaliar tamanho personalizado sem tornar a interface difícil.
+- Distinguir tamanho visual/impresso de resolução do arquivo PNG.
+- Validar tamanhos mínimos que mantenham leitura confiável.
+- Oferecer ações individuais e em lote: salvar, baixar, compartilhar, gerar PDF.
+- Não salvar itens até o usuário confirmar explicitamente a ação de salvar ou o fluxo aprovado.
+- Tratar falhas parciais sem perder resultados concluídos.
+
+FASE 3 — EXPORTAÇÃO ZIP E PDF
+- ZIP com um PNG por QR, nomes seguros e previsíveis, tratamento de nomes repetidos e caracteres inválidos.
+- Permitir exportar todos ou somente os selecionados.
+- Evitar centenas de downloads separados no navegador.
+- PDF de primeira classe com dois layouts iniciais:
+  A. Folha de etiquetas: grade de QR Codes e identificação legível.
+  B. Relatório: códigos maiores e mais espaçados.
+- PDF deve respeitar seleção, tamanho escolhido, margens, espaçamento, paginação e legibilidade.
+- Testar leitura real dos QR Codes exportados e impressão em tamanhos diferentes.
+- Mostrar progresso para exportações grandes, informar falhas e não sobrescrever arquivos silenciosamente.
+- Se PDF/ZIP tiver limitações entre plataformas, buscar solução consistente e documentar qualquer diferença necessária.
+
+FASE 4 — SCANEAR TEXTO/NÚMEROS (OCR)
+- Adicionar a aba principal “Scanear”, mantendo “Início”, “Criar”, “Ler” e “Organizar”.
+- Permitir câmera e seleção de imagem existente.
+- Abrir câmera/selecionar imagem não deve executar OCR automaticamente.
+- O reconhecimento só começa após o usuário pressionar explicitamente o botão “Scanear”.
+- Mostrar progresso, erros e orientação para imagens sem texto ou ilegíveis.
+- Apresentar resultado em área de texto editável, preservando quebras de linha sempre que possível.
+- Permitir revisar/corrigir antes de salvar.
+- Ações explícitas: Salvar em Organizar, Baixar TXT, Compartilhar e Copiar.
+- Permitir repetir leitura e acrescentar resultado se viável; deixar claro como o texto será combinado.
+- Não salvar automaticamente como registro definitivo.
+- Priorizar OCR local quando viável e compatível. Se for necessário processamento externo, não enviar imagem sem consentimento claro e informar a implicação de privacidade.
+- Tratar permissões de câmera, cancelamento, erro e plataformas sem suporte.
+- Não declarar suporte multiplataforma sem testar.
+
+FASE 5 — ORGANIZAR RESULTADOS OCR
+- Resultado OCR salvo deve aparecer em Organizar com identificação de tipo própria.
+- Abrir um resultado salvo apenas para consultar/editar não deve executar OCR de novo.
+- Exibir texto editável e ações explícitas: Salvar alterações, Baixar, Compartilhar e Copiar.
+- Oferecer reprocessamento da imagem original somente após ação explícita.
+- Evitar duplicar o registro quando salvar alterações; se existir “Salvar como novo”, distinguir claramente.
+- Não mostrar ações exclusivas de QR em textos OCR nem ações exclusivas de OCR em QR Codes.
+- Definir e respeitar política de retenção da imagem original; não guardá-la sem necessidade e sem informar o usuário.
+- Em seleção múltipla de textos, permitir exportar/baixar conteúdo combinado com separação clara entre registros, se isso for seguro e compreensível.
+
+FASE 6 — LEITURA EM MASSA DE QR CODES
+- Implementar primeiro leitura sequencial contínua, não a promessa de detectar vários QR Codes em um único quadro.
+- Abrir a câmera não deve começar a registrar leituras.
+- Exigir botão explícito “Ler” ou “Iniciar leitura”.
+- Incluir Pausar, Retomar e Finalizar.
+- Pausar deve interromper novas capturas; retomar requer comando explícito.
+- Evitar registrar repetidamente o mesmo QR enquanto permanece no enquadramento.
+- Mostrar lista de resultados, contador, estado e duplicatas.
+- Permitir remover itens individualmente e revisar o lote antes de concluir.
+- Ações após revisão: Salvar no histórico, Baixar/exportar, Compartilhar e Copiar, conforme suporte da plataforma.
+- Nenhuma ação de salvar, baixar ou compartilhar deve ocorrer automaticamente.
+- Preservar a distinção entre eventos do histórico e QR Codes criados/salvos na biblioteca.
+- Manter a retenção atual de sete dias do histórico, salvo decisão explícita em contrário.
+- Avaliar a associação a um identificador de lote sem comprometer o modelo existente.
+- Só considerar múltiplos QR no mesmo quadro numa fase posterior, após confirmar suporte da biblioteca e testes reais.
+
+FASE 7 — INTEGRAÇÃO COM SINCRONIZAÇÃO E SEGURANÇA
+- Inspecionar o estado da sincronização existente antes de conectar novos tipos de registros.
+- Não contornar nem enfraquecer RLS, autenticação, consentimento, idempotência ou tombstones.
+- Se novos tipos de dados precisarem sincronizar, determinar se fazem parte do escopo inicial ou se devem permanecer locais até planejamento específico.
+- Evitar sincronizar imagens originais OCR sem decisão explícita de privacidade e custo.
+- Garantir isolamento entre contas e que operações pendentes de um usuário nunca sejam enviadas na sessão de outro.
+- Não alterar Supabase remoto.
+- Qualquer alteração de esquema deve ser migrada e testada apenas no Supabase local nesta autorização.
+- Se houver risco crítico à integridade de dados, parar apenas essa parte e apresentar alternativas; continuar as tarefas independentes e seguras.
+
+FASE 8 — TESTES INTEGRADOS E ESTABILIZAÇÃO
+- Testes unitários para parser de intervalos, hífens, zeros à esquerda, duplicatas, seleção, limites e tamanhos.
+- Testes de persistência, histórico, OCR salvo/editado, fila e sincronização quando aplicável.
+- Testes para leitura manual: nenhum registro antes de apertar Iniciar/Ler; pausar interrompe; retomar depende de ação; não repetir involuntariamente o mesmo código.
+- Testes para OCR: nenhum processamento automático ao abrir câmera/imagem ou registro em Organizar.
+- Testes de ZIP/PDF: seleção correta, nomes de arquivos, paginação, identificação e leitura dos códigos exportados.
+- Testes de falhas parciais, cancelamento, permissões e reinicialização.
+- Executar, quando aplicável:
+  - flutter analyze --no-pub
+  - flutter test --no-pub
+  - flutter build web --release --no-pub
+  - git diff --check
+  - testes locais Supabase se houver alterações de banco.
+- Validar Windows e Android quando os toolchains estiverem disponíveis. Não declarar builds aprovados se não forem executados.
+- Realizar testes manuais nas plataformas suportadas, sobretudo câmera, compartilhamento, download e impressão.
+- Testar quantidades crescentes, por exemplo 10, 100 e 500 itens, registrando desempenho e memória.
+- Comparar os resultados com a linha de base inicial para detectar regressões.
+- Corrigir regressões causadas pelas alterações antes de avançar.
+
+4. PRINCÍPIOS DE UX E QUALIDADE
+- Prático, fácil, bonito, responsivo e acessível.
+- Manter consistência visual com o QR Ops existente.
+- Usar textos claros, sem sobrecarregar telas.
+- Sempre deixar explícito o que será salvo, baixado, compartilhado ou excluído.
+- Exibir estado de carregamento e resultados de operações demoradas.
+- Evitar ações automáticas inesperadas.
+- Para listas grandes, priorizar busca, filtros, seleção múltipla e ações em lote.
+- Não exigir conta para funcionalidades locais já existentes.
+- Manter os cinco destinos principais: Início, Criar, Ler, Scanear e Organizar.
+
+5. CONTINUIDADE SEM PAUSAS DESNECESSÁRIAS
+O Dev pode acrescentar tarefas de análise, protótipos, testes, documentação e refatoração se forem necessárias para executar as fases com segurança. Deve explicar brevemente por que a tarefa adicional é necessária e registrá-la no relatório.
+
+Não pare apenas para perguntar preferências técnicas de baixo risco. Escolha a opção mais segura, simples de manter e coerente com o projeto, e documente a decisão.
+
+Pare e peça orientação somente se:
+- houver risco iminente de perda/corrupção de dados;
+- for necessária alteração em produção, deploy, publicação, commit ou push;
+- surgir questão de privacidade/consentimento não resolvida que exija enviar dados a terceiros;
+- duas interpretações plausíveis produzirem consequências irreversíveis ou incompatíveis com os requisitos;
+- faltar uma credencial/serviço que só o usuário possa fornecer;
+- uma alteração puder comprometer segurança, isolamento de usuários ou integridade da sincronização.
+
+Se uma fase estiver bloqueada, continue as fases independentes e seguras quando possível, registrando a dependência. Não fique aguardando sem executar trabalho útil.
+
+6. RELATÓRIOS E PONTOS DE CONTROLE
+Ao concluir cada fase:
+- Informar o que foi implementado.
+- Listar arquivos modificados/criados.
+- Listar testes executados e resultados reais.
+- Registrar limitações por plataforma.
+- Registrar decisões técnicas adicionais e sua justificativa.
+- Atualizar a documentação de projeto apropriada.
+- Não declarar a fase concluída sem critérios de aceitação verificados.
+
+Ao final, apresentar:
+1. Resumo executivo.
+2. Fases concluídas, parciais, bloqueadas e pendentes.
+3. Arquivos modificados.
+4. Dependências adicionadas e justificativas.
+5. Testes e builds executados, com resultados exatos.
+6. Validação de desempenho com lotes grandes.
+7. Validação de privacidade e sincronização.
+8. Riscos e limitações restantes.
+9. Próximos passos recomendados.
+
+7. GIT E ENTREGA
+- Não fazer commit, push, deploy ou publicação.
+- Não apagar nem reverter alterações preexistentes.
+- Ao terminar, deixar o trabalho local e apresentar o diff/resumo para revisão.
+- Executar git diff --check.
+- Confirmar que fix-scan-copy.ps1 e serve-qr-ops.ps1 continuam presentes.
+- Registrar o estado final do Git e separar alterações anteriores das alterações feitas pelo Dev quando for possível determinar com segurança.
+
+8. INÍCIO
+Comece agora lendo integralmente:
+PLANO_MUDANCAS_PROPOSTAS_QR_OPS.txt
+
+Depois faça a análise técnica da Fase 0 e avance pelas fases, incrementalmente. Use o documento de referência como fonte dos requisitos e este arquivo como roteiro de execução. O usuário autorizou continuidade sem pausas rotineiras; pare apenas nos casos críticos descritos acima.
