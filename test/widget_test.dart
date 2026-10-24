@@ -384,6 +384,34 @@ class _MemoryQrRecordRepository implements QrRecordRepository {
   }
 
   @override
+  @override
+  @override
+  Future<int> deleteAllReadHistory() async {
+    final oldLength = records.length;
+    records.removeWhere((record) => record.operation == QrRecordOperation.read);
+    return oldLength - records.length;
+  }
+
+  @override
+  Future<bool> updateById(QrRecord record) async {
+    final index = records.indexWhere((item) => item.id == record.id);
+    if (index < 0) return false;
+    records[index] = record;
+    return true;
+  }
+
+  @override
+  Future<int> pruneReadHistoryBefore(DateTime cutoffUtc) async {
+    final oldLength = records.length;
+    records.removeWhere(
+      (record) =>
+          record.operation == QrRecordOperation.read &&
+          record.createdAt.isBefore(cutoffUtc.toUtc()),
+    );
+    return oldLength - records.length;
+  }
+
+  @override
   Future<bool> deleteById(String id) async {
     final oldLength = records.length;
     records.removeWhere((record) => record.id == id);

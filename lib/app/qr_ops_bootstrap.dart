@@ -1,7 +1,17 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
 
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../data/supabase_app_config.dart';
+import '../data/supabase_qr_auth_gateway.dart';
 import '../data/qr_record_repository_factory.dart';
+import '../data/qr_sync_outbox_factory.dart';
+import '../data/qr_sync_service.dart';
+import '../data/supabase_qr_sync_transport.dart';
+import '../domain/qr_auth_gateway.dart';
 import '../domain/qr_record_repository.dart';
+import '../domain/sync_owner_context.dart';
 import 'qr_ops_app.dart';
 
 class QrOpsBootstrap extends StatefulWidget {
@@ -15,6 +25,11 @@ class QrOpsBootstrap extends StatefulWidget {
 
 class _QrOpsBootstrapState extends State<QrOpsBootstrap> {
   QrRecordRepository? _repository;
+  QrAuthGateway? _authGateway;
+  QrSyncService? _syncService;
+  final SyncOwnerContext _syncOwnerContext = SyncOwnerContext();
+  StreamSubscription<QrAuthUser?>? _authSubscription;
+  Timer? _syncTimer;
   bool _startupFailed = false;
 
   @override
@@ -25,17 +40,83 @@ class _QrOpsBootstrapState extends State<QrOpsBootstrap> {
 
   Future<void> _initializeDatabase() async {
     try {
-      final repository =
-          await (widget.openRepository ?? openQrRecordRepository)();
+      final repository = await (widget.openRepository ?? () =>
+          openQrRecordRepository(syncOwnerContext: _syncOwnerContext))();
+      // Local-first Free history retention: UTC cutoff, read entries only.
+      try {
+        await repository.pruneReadHistoryBefore(
+          DateTime.now().toUtc().subtract(const Duration(days: 7)),
+        );
+      } on Object {
+        // A cleanup failure must not make existing local data inaccessible.
+      }
+      QrAuthGateway? authGateway;
+      QrSyncService? syncService;
+      if (SupabaseAppConfig.isConfigured) {
+        try {
+          SupabaseAppConfig.validate();
+          try {
+            Supabase.instance.client;
+          } on Object {
+            await Supabase.initialize(
+              url: SupabaseAppConfig.url,
+              publishableKey: SupabaseAppConfig.publishableKey,
+            );
+          }
+          final client = Supabase.instance.client;
+          authGateway = SupabaseQrAuthGateway(client);
+          _syncOwnerContext.update(authGateway.currentUser?.id);
+          try {
+            syncService = QrSyncService(
+              localRepository: repository,
+              outbox: await openQrSyncOutbox(),
+              transport: SupabaseQrSyncTransport(client),
+            );
+          } on Object {
+            // Local mode remains usable if the durable sync store cannot open.
+          }
+        } on Object {
+          // Authentication is optional; local storage must remain available.
+        }
+      }
       if (!mounted) return;
+      _authSubscription?.cancel();
+      _authSubscription = authGateway?.authStateChanges.listen((user) {
+        _syncOwnerContext.update(user?.id);
+        if (user != null) unawaited(_trySync(user.id));
+      });
+      _syncTimer?.cancel();
+      if (syncService != null) {
+        _syncTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+          final user = authGateway?.currentUser;
+          if (user != null) unawaited(_trySync(user.id));
+        });
+      }
       setState(() {
         _repository = repository;
+        _authGateway = authGateway;
+        _syncService = syncService;
         _startupFailed = false;
       });
     } on Object {
       if (!mounted) return;
       setState(() => _startupFailed = true);
     }
+  }
+
+  Future<void> _trySync(String ownerId) async {
+    try {
+      await _syncService?.syncOnce(ownerId);
+    } on Object {
+      // Keep local data and the persistent outbox; the next timer/manual retry can resume.
+    }
+  }
+
+  @override
+  void dispose() {
+    _syncTimer?.cancel();
+    _authSubscription?.cancel();
+    super.dispose();
   }
 
   void _retry() {
@@ -49,7 +130,11 @@ class _QrOpsBootstrapState extends State<QrOpsBootstrap> {
   @override
   Widget build(BuildContext context) {
     if (_repository case final repository?) {
-      return QrOpsApp(repository: repository);
+      return QrOpsApp(
+        repository: repository,
+        authGateway: _authGateway,
+        syncService: _syncService,
+      );
     }
     if (_startupFailed) return _DatabaseErrorPage(onRetry: _retry);
 

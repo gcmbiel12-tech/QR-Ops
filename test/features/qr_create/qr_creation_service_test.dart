@@ -194,6 +194,46 @@ void main() {
     },
   );
 
+  test('image and PDF QR types encode the exact public HTTP(S) URL', () async {
+    const imageUrl =
+        'https://files.example.org/photos/cat.png?download=1&v=2#preview';
+    const pdfUrl = 'http://docs.example.org/reports/quarterly.pdf?lang=pt-BR';
+    for (final entry in <(QrContentType, String)>[
+      (QrContentType.image, imageUrl),
+      (QrContentType.pdf, pdfUrl),
+    ]) {
+      final encoded = service.compose(
+        QrContentDraft(type: entry.$1, value: entry.$2),
+      );
+      expect(encoded.value, entry.$2);
+      expect(encoded.type.storageValue, entry.$1.name);
+      expect(service.encode(encoded.value).moduleCount, greaterThan(0));
+      final saved = await service.create(
+        encoded.value,
+        contentType: encoded.type.storageValue,
+      );
+      expect(saved.content, entry.$2);
+      expect(saved.contentType, entry.$1.name);
+    }
+  });
+
+  test('image and PDF QR types reject unsafe or malformed destinations', () {
+    for (final type in [QrContentType.image, QrContentType.pdf]) {
+      for (final url in [
+        '',
+        'javascript:alert(1)',
+        'file:///tmp/doc.pdf',
+        'https:///missing-host.pdf',
+        'https://example.org/%zz',
+      ]) {
+        expect(
+          () => service.compose(QrContentDraft(type: type, value: url)),
+          throwsA(isA<QrContentException>()),
+          reason: '$type: $url',
+        );
+      }
+    }
+  });
   test('preserves complete HTTP and HTTPS URLs exactly', () {
     for (final url in [
       'https://Exemplo.com/caminho?q=ação%20e%20café&x=1#seção',

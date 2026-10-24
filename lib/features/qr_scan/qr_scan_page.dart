@@ -5,11 +5,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:image/image.dart' as img;
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:url_launcher/url_launcher.dart' as launcher;
-import 'package:zxing2/qrcode.dart' as zxing;
 
+import 'qr_image_decoder.dart';
 import '../../domain/qr_content_interpreter.dart';
 import '../../domain/qr_record.dart';
 import '../../domain/qr_record_repository.dart';
@@ -313,32 +312,13 @@ class _QrScanPageState extends State<QrScanPage> {
 
   Future<void> _scanQrFromImageBytes(Uint8List bytes) async {
     if (!mounted || !widget.isActive) return;
-    if (bytes.isEmpty || bytes.length > 20 * 1024 * 1024) {
-      setState(() {
-        _isStarting = false;
-        _errorMessage = 'A imagem está vazia ou excede o limite de 20 MB.';
-      });
-      return;
-    }
 
     try {
-      final decodedImage = img.decodeImage(bytes);
-      if (decodedImage == null) throw const FormatException('Invalid image');
-      final rgbaBytes = decodedImage
-          .convert(numChannels: 4)
-          .getBytes(order: img.ChannelOrder.abgr);
-      final source = zxing.RGBLuminanceSource(
-        decodedImage.width,
-        decodedImage.height,
-        rgbaBytes.buffer.asInt32List(),
-      );
-      final bitmap = zxing.BinaryBitmap(zxing.GlobalHistogramBinarizer(source));
-      final result = zxing.QRCodeReader().decode(bitmap);
-
+      final value = decodeQrFromImageBytes(bytes);
       if (!mounted || !widget.isActive) return;
       setState(() => _isStarting = false);
       _acceptResult(
-        QrScanResult(value: result.text, format: 'QR Code'),
+        QrScanResult(value: value, format: 'QR Code'),
         fromImage: true,
       );
     } on Object {
@@ -380,6 +360,10 @@ class _QrScanPageState extends State<QrScanPage> {
         QrRecord.read(
           content: result.value,
           symbology: result.format.toLowerCase().replaceAll(' ', '_'),
+          contentType: const QrContentInterpreter()
+              .interpret(result.value)
+              .kind
+              .name,
         ),
       );
 

@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
 class HomePage extends StatelessWidget {
-  const HomePage({super.key, required this.onNavigate});
+  const HomePage({super.key, required this.onNavigate, this.onAccountTap});
 
   final ValueChanged<int> onNavigate;
+  final VoidCallback? onAccountTap;
 
   @override
   Widget build(BuildContext context) {
@@ -19,7 +20,22 @@ class HomePage extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('QR Ops', style: theme.textTheme.headlineMedium),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'QR Ops',
+                        style: theme.textTheme.headlineMedium,
+                      ),
+                    ),
+                    OutlinedButton.icon(
+                      key: const ValueKey('home-account-button'),
+                      onPressed: onAccountTap,
+                      icon: const Icon(Icons.person_outline),
+                      label: const Text('Conta'),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 6),
                 Text(
                   'Tudo pronto para o próximo passo.',
@@ -73,10 +89,7 @@ class HomePage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 24),
-                Text(
-                  'Acesso rápido',
-                  style: theme.textTheme.titleLarge,
-                ),
+                Text('Acesso rápido', style: theme.textTheme.titleLarge),
                 const SizedBox(height: 12),
                 _AreaShortcut(
                   icon: Icons.qr_code_scanner_rounded,

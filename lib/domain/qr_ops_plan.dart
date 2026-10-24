@@ -36,6 +36,8 @@ class QrOpsPlans {
   static const supportedContentTypes = <String>{
     'text',
     'url',
+    'image',
+    'pdf',
     'phone',
     'email',
     'wifi',

@@ -56,6 +56,8 @@ class _QrCreatePageState extends State<QrCreatePage> {
   static const _visibleTypes = <QrContentType>[
     QrContentType.text,
     QrContentType.url,
+    QrContentType.image,
+    QrContentType.pdf,
     QrContentType.phone,
     QrContentType.email,
     QrContentType.wifi,
@@ -65,6 +67,10 @@ class _QrCreatePageState extends State<QrCreatePage> {
   static const _descriptions = <QrContentType, String>{
     QrContentType.text: 'Compartilhe textos e informações.',
     QrContentType.url: 'Direcione para um site.',
+    QrContentType.image:
+        'Crie um QR Code para uma imagem hospedada publicamente.',
+    QrContentType.pdf:
+        'Crie um QR Code para um documento PDF hospedado publicamente.',
     QrContentType.phone: 'Facilite o contato por telefone.',
     QrContentType.email: 'Prepare um e-mail com assunto e mensagem.',
     QrContentType.wifi: 'Compartilhe o acesso à rede Wi-Fi.',
@@ -75,6 +81,8 @@ class _QrCreatePageState extends State<QrCreatePage> {
   static const _icons = <QrContentType, IconData>{
     QrContentType.text: Icons.text_fields,
     QrContentType.url: Icons.language,
+    QrContentType.image: Icons.image_outlined,
+    QrContentType.pdf: Icons.picture_as_pdf_outlined,
     QrContentType.phone: Icons.phone,
     QrContentType.email: Icons.email_outlined,
     QrContentType.wifi: Icons.wifi,
@@ -84,6 +92,8 @@ class _QrCreatePageState extends State<QrCreatePage> {
   late final TextEditingController _valueController;
   late final TextEditingController _secondaryController;
   late final TextEditingController _tertiaryController;
+  late final TextEditingController _nameController;
+  late final TextEditingController _descriptionController;
 
   late final Map<QrContentType, List<String>> _fieldsByType = {
     for (final type in QrContentType.values) type: ['', '', ''],
@@ -122,6 +132,8 @@ class _QrCreatePageState extends State<QrCreatePage> {
     _valueController = TextEditingController();
     _secondaryController = TextEditingController();
     _tertiaryController = TextEditingController();
+    _nameController = TextEditingController();
+    _descriptionController = TextEditingController();
     _loadSavedLogo();
   }
 
@@ -223,6 +235,8 @@ class _QrCreatePageState extends State<QrCreatePage> {
     _valueController.dispose();
     _secondaryController.dispose();
     _tertiaryController.dispose();
+    _nameController.dispose();
+    _descriptionController.dispose();
     super.dispose();
   }
 
@@ -549,6 +563,8 @@ class _QrCreatePageState extends State<QrCreatePage> {
       await widget.service.create(
         encoded.value,
         contentType: encoded.type.storageValue,
+        name: _nameController.text,
+        description: _descriptionController.text,
       );
 
       if (!mounted) return;
@@ -556,7 +572,7 @@ class _QrCreatePageState extends State<QrCreatePage> {
       widget.onRecordCreated();
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('QR Code salvo no histórico local.')),
+        const SnackBar(content: Text('QR Code salvo na biblioteca local.')),
       );
     } on QrContentException catch (error) {
       if (mounted) {
@@ -568,7 +584,7 @@ class _QrCreatePageState extends State<QrCreatePage> {
     } on Object {
       if (mounted) {
         setState(() {
-          _saveError = 'Não foi possível salvar no histórico local.';
+          _saveError = 'Não foi possível salvar na biblioteca local.';
         });
       }
     } finally {
@@ -615,14 +631,29 @@ class _QrCreatePageState extends State<QrCreatePage> {
         multiline: true,
       ),
     ],
-    QrContentType.url => [
+    QrContentType.url || QrContentType.image || QrContentType.pdf => [
       _field(
         controller: _valueController,
         key: const ValueKey('qr-content-field-url'),
-        label: 'Endereço do site',
-        hint: 'https://exemplo.com.br',
+        label: _type == QrContentType.image
+            ? 'URL pública da imagem'
+            : _type == QrContentType.pdf
+            ? 'URL pública do PDF'
+            : 'Endereço do site',
+        hint: _type == QrContentType.image
+            ? 'https://exemplo.com/imagem.png'
+            : _type == QrContentType.pdf
+            ? 'https://exemplo.com/documento.pdf'
+            : 'https://exemplo.com.br',
         keyboardType: TextInputType.url,
       ),
+      if (_type == QrContentType.image || _type == QrContentType.pdf)
+        const Padding(
+          padding: EdgeInsets.only(top: 12),
+          child: Text(
+            'O QR Code contém somente o link. O arquivo precisa estar hospedado em um serviço externo com acesso público; o QR Ops não faz upload nem confirma a disponibilidade do arquivo.',
+          ),
+        ),
     ],
     QrContentType.phone => [
       _field(
@@ -939,6 +970,16 @@ class _QrCreatePageState extends State<QrCreatePage> {
                   ],
                 ),
                 ..._contentFields(),
+                _field(
+                  controller: _nameController,
+                  label: 'Nome (opcional)',
+                  hint: 'Ex.: Cardapio da loja',
+                ),
+                _field(
+                  controller: _descriptionController,
+                  label: 'Descricao (opcional)',
+                  multiline: true,
+                ),
                 if (_validationMessage case final message?) ...[
                   const SizedBox(height: 8),
                   Text(
@@ -1510,7 +1551,7 @@ class _QrCreatePageState extends State<QrCreatePage> {
                           )
                         : const Icon(Icons.save_outlined),
                     label: Text(
-                      _saving ? 'Salvando...' : 'Salvar no histórico',
+                      _saving ? 'Salvando...' : 'Salvar na biblioteca',
                     ),
                   ),
                   const SizedBox(height: 12),

@@ -3,12 +3,14 @@ import 'package:qr/qr.dart';
 import '../../domain/qr_record.dart';
 import '../../domain/qr_record_repository.dart';
 
-enum QrContentType { text, url, phone, email, sms, wifi, whatsapp }
+enum QrContentType { text, url, image, pdf, phone, email, sms, wifi, whatsapp }
 
 extension QrContentTypeLabel on QrContentType {
   String get label => switch (this) {
     QrContentType.text => 'Texto livre',
     QrContentType.url => 'Site ou URL',
+    QrContentType.image => 'Imagem pública',
+    QrContentType.pdf => 'Documento PDF',
     QrContentType.phone => 'Telefone',
     QrContentType.email => 'E-mail',
     QrContentType.sms => 'SMS',
@@ -73,6 +75,8 @@ class QrCreationService {
         content = draft.value;
         break;
       case QrContentType.url:
+      case QrContentType.image:
+      case QrContentType.pdf:
         final uri = Uri.tryParse(value);
         if (uri == null) {
           throw const QrContentException(QrContentProblem.malformedUrl);
@@ -180,10 +184,20 @@ class QrCreationService {
     }
   }
 
-  Future<QrRecord> create(String content, {String contentType = 'text'}) async {
+  Future<QrRecord> create(
+    String content, {
+    String contentType = 'text',
+    String name = '',
+    String description = '',
+  }) async {
     encode(content);
     return _repository.insert(
-      QrRecord.created(content: content, contentType: contentType),
+      QrRecord.created(
+        content: content,
+        contentType: contentType,
+        name: name.trim(),
+        description: description.trim(),
+      ),
     );
   }
 

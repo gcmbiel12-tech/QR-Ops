@@ -59,6 +59,13 @@ void main() {
         await tester.tap(find.byKey(const ValueKey('nav-organizar')));
         await tester.pumpAndSettle();
 
+        expect(find.text('Biblioteca de QR Codes'), findsOneWidget);
+        await tester.tap(find.text('Histórico').last);
+        await tester.pump();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 200)),
+        );
+        await tester.pump(const Duration(milliseconds: 400));
         expect(find.text('Histórico local'), findsOneWidget);
       } finally {
         debugDefaultTargetPlatformOverride = null;
@@ -118,7 +125,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('QR Code salvo no histórico local.'), findsOneWidget);
+    expect(find.text('QR Code salvo na biblioteca local.'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('nav-organizar')));
     await tester.pump();

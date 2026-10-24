@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../../domain/qr_auth_gateway.dart';
 import '../../domain/qr_record_repository.dart';
+import '../../data/qr_sync_service.dart';
+import '../auth/qr_account_page.dart';
 import '../home/home_page.dart';
 import '../qr_create/qr_create_page.dart';
 import '../qr_create/qr_creation_service.dart';
 import '../qr_scan/qr_scan_page.dart';
-import '../qr_history/qr_history_page.dart';
+import '../qr_history/qr_organize_page.dart';
 
 class _Area {
   const _Area({
@@ -20,9 +23,11 @@ class _Area {
 }
 
 class QrOpsShell extends StatefulWidget {
-  const QrOpsShell({super.key, required this.repository});
+  const QrOpsShell({super.key, required this.repository, this.authGateway, this.syncService});
 
   final QrRecordRepository repository;
+  final QrAuthGateway? authGateway;
+  final QrSyncService? syncService;
 
   @override
   State<QrOpsShell> createState() => _QrOpsShellState();
@@ -66,6 +71,18 @@ class _QrOpsShellState extends State<QrOpsShell> {
     setState(() => _selectedIndex = index);
   }
 
+  Future<void> _openAccount() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => QrAccountPage(
+          auth: widget.authGateway,
+          syncService: widget.syncService,
+          repository: widget.repository,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -90,7 +107,10 @@ class _QrOpsShellState extends State<QrOpsShell> {
                 child: IndexedStack(
                   index: _selectedIndex,
                   children: [
-                    HomePage(onNavigate: _selectArea),
+                    HomePage(
+                      onNavigate: _selectArea,
+                      onAccountTap: _openAccount,
+                    ),
                     QrCreatePage(
                       service: _creationService,
                       onRecordCreated: () =>
@@ -102,7 +122,7 @@ class _QrOpsShellState extends State<QrOpsShell> {
                       onRecordRead: () =>
                           setState(() => _historyRefreshToken++),
                     ),
-                    QrHistoryPage(
+                    QrOrganizePage(
                       repository: widget.repository,
                       refreshToken: _historyRefreshToken,
                       isActive: _selectedIndex == 3,

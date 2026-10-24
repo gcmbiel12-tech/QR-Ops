@@ -2,7 +2,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:idb_shim/idb.dart';
 import 'package:idb_shim/idb_browser.dart' show idbFactoryBrowser;
 import 'package:qr_ops/data/indexed_db_qr_record_repository.dart';
+import 'package:qr_ops/data/indexed_db_qr_sync_outbox.dart';
 import 'package:qr_ops/domain/qr_record.dart';
+import 'package:qr_ops/domain/qr_sync_contract.dart';
+import 'package:qr_ops/domain/sync_owner_context.dart';
 
 void main() {
   late IndexedDbQrRecordRepository repository;
@@ -73,6 +76,60 @@ void main() {
     expect(restored?.content, 'permanece após recarregar');
   });
 
+  test(
+    'updates saved metadata while preserving the original content and identity',
+    () async {
+      final original = await repository.insert(
+        QrRecord.created(content: 'https://example.org', name: 'Old name'),
+      );
+      final updated = QrRecord(
+        id: original.id,
+        operation: original.operation,
+        symbology: original.symbology,
+        contentType: original.contentType,
+        content: original.content,
+        name: 'New name',
+        description: 'New description',
+        createdAt: original.createdAt,
+      );
+      expect(await repository.updateById(updated), isTrue);
+      final loaded = await repository.findById(original.id);
+      expect(loaded?.content, 'https://example.org');
+      expect(loaded?.name, 'New name');
+      expect(loaded?.description, 'New description');
+    },
+  );
+  test(
+    'retention deletes old reads but preserves library items and recent reads',
+    () async {
+      final now = DateTime.now().toUtc();
+      final cutoff = now.subtract(const Duration(days: 7));
+      final oldRead = await repository.insert(
+        QrRecord.read(
+          content: 'old read',
+          symbology: 'qr',
+          createdAt: cutoff.subtract(const Duration(seconds: 1)),
+        ),
+      );
+      final oldCreated = await repository.insert(
+        QrRecord.created(
+          content: 'saved item',
+          createdAt: cutoff.subtract(const Duration(days: 1)),
+        ),
+      );
+      final recentRead = await repository.insert(
+        QrRecord.read(content: 'recent read', symbology: 'qr', createdAt: now),
+      );
+      expect(await repository.pruneReadHistoryBefore(cutoff), 1);
+      expect(await repository.findById(oldRead.id), isNull);
+      expect((await repository.findById(oldCreated.id))?.content, 'saved item');
+      expect(
+        (await repository.findById(recentRead.id))?.content,
+        'recent read',
+      );
+      expect(await repository.pruneReadHistoryBefore(cutoff), 0);
+    },
+  );
   test('deletes an existing record and reports missing records', () async {
     final record = await repository.insert(
       QrRecord.created(content: 'remover'),
@@ -92,6 +149,48 @@ void main() {
       QrRecord.created(content: 'conteúdo'),
     );
     await expectLater(repository.insert(record), throwsA(anything));
+  });
+
+  test('persists ordered owner-scoped sync mutations in IndexedDB', () async {
+    final owner = SyncOwnerContext()..update('user-a');
+    repository = IndexedDbQrRecordRepository(
+      factory: idbFactoryBrowser,
+      databaseName: databaseName,
+      syncOwnerContext: owner,
+    );
+    final outbox = IndexedDbQrSyncOutbox(factory: idbFactoryBrowser, databaseName: databaseName);
+    final record = await repository.insert(QrRecord.created(content: 'queued create'));
+    final updated = QrRecord(
+      id: record.id,
+      operation: record.operation,
+      symbology: record.symbology,
+      contentType: record.contentType,
+      content: record.content,
+      name: 'metadata updated',
+      createdAt: record.createdAt,
+      revision: record.revision,
+    );
+    await repository.updateById(updated);
+    await repository.deleteById(record.id);
+
+    final pending = await outbox.pendingForOwner('user-a', limit: 100);
+    expect(pending, hasLength(3));
+    expect(pending.map((item) => item.type), [
+      QrSyncMutationType.upsert,
+      QrSyncMutationType.upsert,
+      QrSyncMutationType.delete,
+    ]);
+    expect(pending.map((item) => item.baseRevision), [null, 1, 2]);
+    expect(await outbox.pendingForOwner('user-b'), isEmpty);
+
+    await repository.close();
+    repository = IndexedDbQrRecordRepository(
+      factory: idbFactoryBrowser,
+      databaseName: databaseName,
+    );
+    final reopenedOutbox = IndexedDbQrSyncOutbox(factory: idbFactoryBrowser, databaseName: databaseName);
+    expect(await reopenedOutbox.pendingForOwner('user-a'), hasLength(3));
+    await reopenedOutbox.close();
   });
 
   test('propagates IndexedDB open failures to the caller', () async {
