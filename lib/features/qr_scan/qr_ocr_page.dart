@@ -56,7 +56,7 @@ class _QrOcrPageState extends State<QrOcrPage> {
       if (image == null || !mounted) return;
       final bytes = await image.readAsBytes();
       if (bytes.isEmpty) {
-        setState(() => _message = 'A imagem selecionada estÃ¡ vazia.');
+        setState(() => _message = 'A imagem selecionada está vazia.');
         return;
       }
       setState(() {
@@ -70,8 +70,8 @@ class _QrOcrPageState extends State<QrOcrPage> {
       if (mounted) {
         setState(
           () => _message = source == ImageSource.camera
-              ? 'NÃ£o foi possÃ­vel abrir a cÃ¢mera. Verifique as permissÃµes ou escolha uma imagem.'
-              : 'NÃ£o foi possÃ­vel abrir essa imagem. Tente outro arquivo.',
+              ? 'Não foi possível abrir a câmera. Verifique as permissões ou escolha uma imagem.'
+              : 'Não foi possível abrir essa imagem. Tente outro arquivo.',
         );
       }
     }
@@ -97,7 +97,7 @@ class _QrOcrPageState extends State<QrOcrPage> {
       final bytes = await file.readAsBytes();
       if (bytes.isEmpty) {
         setState(
-          () => _message = 'NÇœo foi possï¿½ï¿½vel ler o arquivo selecionado.',
+          () => _message = 'Não foi possível ler o arquivo selecionado.',
         );
         return;
       }
@@ -108,13 +108,13 @@ class _QrOcrPageState extends State<QrOcrPage> {
         _pdfBytes = isPdf ? bytes : null;
         _savedRecord = null;
         _message = isPdf
-            ? 'PDF carregado. Pressione Scanear para extrair o texto e reconhecer pÇ­ginas digitalizadas.'
+            ? 'PDF carregado. Pressione Scanear para extrair o texto e reconhecer páginas digitalizadas.'
             : 'Imagem pronta. Pressione Scanear para iniciar o reconhecimento.';
       });
     } on Object {
       if (mounted) {
         setState(
-          () => _message = 'NÇœo foi possï¿½ï¿½vel abrir o arquivo. Tente uma imagem ou PDF nÇœo protegido por senha.',
+          () => _message = 'Não foi possível abrir o arquivo. Tente uma imagem ou PDF não protegido por senha.',
         );
       }
     }
@@ -123,7 +123,7 @@ class _QrOcrPageState extends State<QrOcrPage> {
   Future<String> _recognizePdf(Uint8List bytes) async {
     if (!kIsWeb) {
       throw UnsupportedError(
-        'A leitura de PDF estǭ dispon��vel no QR Ops Web. No aplicativo nativo, converta as pǭginas em imagens para usar o OCR.',
+        'A leitura de PDF está disponível no QR Ops Web. No aplicativo nativo, converta as páginas em imagens para usar o OCR.',
       );
     }
     return recognizePdfText(bytes);
@@ -135,7 +135,7 @@ class _QrOcrPageState extends State<QrOcrPage> {
     if (_busy || (bytes == null && pdfBytes == null)) return;
     setState(() {
       _busy = true;
-      _message = 'Reconhecendo texto localmenteâ€¦';
+      _message = 'Reconhecendo texto localmente…';
     });
     try {
       final recognize = widget.recognizeImage ?? recognizeImageText;
@@ -157,13 +157,13 @@ class _QrOcrPageState extends State<QrOcrPage> {
         }
         _appendResult = false;
         _message = trimmed.isEmpty
-            ? 'Nenhum texto reconhecido. Tente uma imagem mais nÃ­tida ou com melhor iluminaÃ§Ã£o.'
+            ? 'Nenhum texto reconhecido. Tente uma imagem mais nítida ou com melhor iluminação.'
             : 'Revise e corrija o texto reconhecido antes de salvar ou exportar.';
       });
     } on UnsupportedError {
       if (mounted) {
         setState(
-          () => _message = 'OCR nÃ£o estÃ¡ disponÃ­vel nesta plataforma.',
+          () => _message = 'O OCR não está disponível nesta plataforma.',
         );
       }
     } on Object {
@@ -203,7 +203,7 @@ class _QrOcrPageState extends State<QrOcrPage> {
           revision: current.revision,
         );
         final success = await widget.repository.updateById(updated);
-        if (!success) throw StateError('O registro OCR nÃ£o foi encontrado.');
+        if (!success) throw StateError('O registro OCR não foi encontrado.');
         _savedRecord = updated;
       }
       if (!mounted) return;
@@ -211,7 +211,7 @@ class _QrOcrPageState extends State<QrOcrPage> {
       setState(() => _message = 'Texto OCR salvo localmente em Organizar.');
     } on Object {
       if (mounted) {
-        setState(() => _message = 'NÃ£o foi possÃ­vel salvar o texto OCR.');
+        setState(() => _message = 'Não foi possível salvar o texto OCR.');
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -226,7 +226,7 @@ class _QrOcrPageState extends State<QrOcrPage> {
       if (mounted) setState(() => _message = 'Texto copiado.');
     } on Object {
       if (mounted) {
-        setState(() => _message = 'NÃ£o foi possÃ­vel copiar o texto.');
+        setState(() => _message = 'Não foi possível copiar o texto.');
       }
     }
   }
@@ -248,7 +248,7 @@ class _QrOcrPageState extends State<QrOcrPage> {
       if (mounted) {
         setState(
           () => _message =
-              'NÃ£o foi possÃ­vel baixar o arquivo TXT nesta plataforma.',
+              'Não foi possível baixar o arquivo TXT nesta plataforma.',
         );
       }
     }
@@ -265,7 +265,7 @@ class _QrOcrPageState extends State<QrOcrPage> {
       if (mounted) {
         setState(
           () => _message =
-              'O compartilhamento nÃ£o estÃ¡ disponÃ­vel neste momento.',
+              'O compartilhamento não está disponível neste momento.',
         );
       }
     }
@@ -296,12 +296,12 @@ class _QrOcrPageState extends State<QrOcrPage> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Escolha uma imagem ou tire uma foto. O OCR sÃ³ comeÃ§a quando vocÃª pressionar Scanear. A imagem de origem fica apenas em memÃ³ria e nÃ£o Ã© salva no histÃ³rico.',
+                  'Escolha uma imagem ou tire uma foto. O OCR só começa quando você pressionar Scanear. A imagem de origem fica apenas em memória e não é salva no histórico.',
                 ),
                 if (kIsWeb) ...[
                   const SizedBox(height: 6),
                   Text(
-                    'No navegador, a biblioteca OCR e o idioma portuguÃªs sÃ£o baixados sob demanda de um CDN pÃºblico; a imagem Ã© processada no prÃ³prio navegador e nÃ£o Ã© enviada para esse serviÃ§o.',
+                    'No navegador, a biblioteca OCR e o idioma português são baixados sob demanda de um CDN público; a imagem é processada no próprio navegador e não é enviada para esse serviço.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -352,7 +352,7 @@ class _QrOcrPageState extends State<QrOcrPage> {
                               const SizedBox(height: 8),
                               Text(_sourceFileName ?? 'PDF selecionado'),
                               const Text(
-                                'O texto serÇ­ extraï¿½ï¿½do de todas as pÇ­ginas (atÇ¸ 30).',
+                                'O texto será extraído de todas as páginas (até 30).',
                               ),
                             ],
                           )
@@ -375,7 +375,7 @@ class _QrOcrPageState extends State<QrOcrPage> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.document_scanner_outlined),
-                    label: Text(_busy ? 'Reconhecendoâ€¦' : 'Scanear'),
+                    label: Text(_busy ? 'Reconhecendo…' : 'Scanear'),
                   ),
                 ],
                 if (_message != null) ...[
@@ -399,7 +399,7 @@ class _QrOcrPageState extends State<QrOcrPage> {
                   maxLines: 16,
                   onChanged: (_) => setState(() {}),
                   decoration: const InputDecoration(
-                    labelText: 'Texto reconhecido â€” revise antes de usar',
+                    labelText: 'Texto reconhecido — revise antes de usar',
                     border: OutlineInputBorder(),
                     alignLabelWithHint: true,
                   ),
@@ -411,7 +411,7 @@ class _QrOcrPageState extends State<QrOcrPage> {
                     onChanged: (value) =>
                         setState(() => _appendResult = value ?? false),
                     title: const Text(
-                      'Acrescentar a prÃ³xima leitura ao texto atual',
+                      'Acrescentar a próxima leitura ao texto atual',
                     ),
                     controlAffinity: ListTileControlAffinity.leading,
                   ),
@@ -426,7 +426,7 @@ class _QrOcrPageState extends State<QrOcrPage> {
                         label: Text(
                           _savedRecord == null
                               ? 'Salvar em Organizar'
-                              : 'Salvar alteraÃ§Ãµes',
+                              : 'Salvar alterações',
                         ),
                       ),
                       OutlinedButton.icon(

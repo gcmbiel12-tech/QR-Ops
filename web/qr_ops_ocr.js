@@ -9,8 +9,8 @@
         const script = document.createElement('script');
         script.src = tesseractUrl;
         script.async = true;
-        script.onload = () => window.Tesseract ? resolve(window.Tesseract) : reject(new Error('Biblioteca OCR indisponÃ­vel.'));
-        script.onerror = () => reject(new Error('NÃ£o foi possÃ­vel carregar a biblioteca OCR.'));
+        script.onload = () => window.Tesseract ? resolve(window.Tesseract) : reject(new Error('Biblioteca OCR indisponível.'));
+        script.onerror = () => reject(new Error('Não foi possível carregar a biblioteca OCR.'));
         document.head.appendChild(script);
       });
     }
