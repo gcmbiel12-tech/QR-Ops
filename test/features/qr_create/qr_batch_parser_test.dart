@@ -82,4 +82,22 @@ void main() {
     expect(result.items, hasLength(10));
     expect(result.errors.single, contains('limite de 10 itens'));
   });
+
+  test('parses 500 identifiable codes and rejects item 501', () {
+    const largeParser = QrBatchParser(maxItems: 500);
+    final input = List<String>.generate(
+      500,
+      (index) => 'QR-AUDIT-${(index + 1).toString().padLeft(4, '0')}',
+    ).join('\n');
+    final result = largeParser.parse(input);
+    expect(result.items, hasLength(500));
+    expect(result.items.first, 'QR-AUDIT-0001');
+    expect(result.items.last, 'QR-AUDIT-0500');
+    expect(result.errors, isEmpty);
+
+    final oversized = largeParser.parse('$input\nQR-AUDIT-0501');
+    expect(oversized.items, hasLength(500));
+    expect(oversized.errors, hasLength(1));
+    expect(oversized.errors.single, contains('limite de 500 itens'));
+  });
 }

@@ -61,7 +61,9 @@ class _QrBatchCreatePageState extends State<QrBatchCreatePage> {
       try {
         widget.service.encode(item);
       } on Object {
-        errors.add('O conteúdo "${item.length > 32 ? '${item.substring(0, 32)}…' : item}" não pode ser codificado em um QR Code.');
+        errors.add(
+          'O conteúdo "${item.length > 32 ? '${item.substring(0, 32)}…' : item}" não pode ser codificado em um QR Code.',
+        );
       }
     }
     return errors;
@@ -172,7 +174,7 @@ class _QrBatchCreatePageState extends State<QrBatchCreatePage> {
         title: const Text('Salvar QR Codes selecionados?'),
         content: Text(
           'Serão salvos ${selectedItems.length} QR Codes na biblioteca local.'
-          '${_duplicates.isEmpty ? '' : '\\nA prévia contém ${_duplicates.length} código(s) duplicado(s), mantidos conforme sua escolha.'}',
+          '${_duplicates.isEmpty ? '' : '\nA prévia contém ${_duplicates.length} código(s) duplicado(s), mantidos conforme sua escolha.'}',
         ),
         actions: [
           TextButton(

@@ -58,6 +58,7 @@ class _QrScanPageState extends State<QrScanPage> {
   final ImagePicker _imagePicker = ImagePicker();
 
   QrScanResult? _result;
+  QrScanResult? _pendingCameraResult;
   List<QrPdfDecodeResult> _pdfResults = [];
   String? _pdfFileName;
   String? _errorMessage;
@@ -136,6 +137,7 @@ class _QrScanPageState extends State<QrScanPage> {
 
     setState(() {
       _result = null;
+      _pendingCameraResult = null;
       _pdfResults = [];
       _pdfFileName = null;
       _errorMessage = null;
@@ -214,7 +216,32 @@ class _QrScanPageState extends State<QrScanPage> {
 
   void _handleCapture(BarcodeCapture capture) {
     if (_hasRead || !widget.isActive || !_cameraEnabled) return;
-    _acceptCapture(capture);
+
+    // A câmera identifica o código continuamente, mas a confirmação é manual.
+    // Isso evita encerrar a câmera antes de o usuário alinhar e pressionar Capturar.
+    for (final barcode in capture.barcodes) {
+      final value = barcode.rawValue?.trim();
+      if (value == null || value.isEmpty) continue;
+      final candidate = QrScanResult(
+        value: value,
+        format: _formatLabel(barcode.format),
+      );
+      if (_pendingCameraResult?.value == candidate.value &&
+          _pendingCameraResult?.format == candidate.format) {
+        return;
+      }
+      setState(() {
+        _pendingCameraResult = candidate;
+        _errorMessage = null;
+      });
+      return;
+    }
+  }
+
+  void _captureDetectedCode() {
+    final candidate = _pendingCameraResult;
+    if (candidate == null || !_cameraEnabled || _hasRead) return;
+    _acceptResult(candidate);
   }
 
   void _acceptCapture(BarcodeCapture capture, {bool fromImage = false}) {
@@ -806,16 +833,33 @@ class _QrScanPageState extends State<QrScanPage> {
                                               crossAxisAlignment:
                                                   CrossAxisAlignment.start,
                                               children: [
-                                                if (_pdfResults[index].imageBase64.isNotEmpty)
+                                                if (_pdfResults[index]
+                                                    .imageBase64
+                                                    .isNotEmpty)
                                                   Padding(
-                                                    padding: const EdgeInsets.only(bottom: 8),
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          bottom: 8,
+                                                        ),
                                                     child: Align(
-                                                      alignment: Alignment.centerLeft,
+                                                      alignment:
+                                                          Alignment.centerLeft,
                                                       child: Image.memory(
-                                                        base64Decode(_pdfResults[index].imageBase64),
+                                                        base64Decode(
+                                                          _pdfResults[index]
+                                                              .imageBase64,
+                                                        ),
                                                         height: 112,
                                                         fit: BoxFit.contain,
-                                                        errorBuilder: (_, _, _) => const Icon(Icons.qr_code_2, size: 72),
+                                                        errorBuilder:
+                                                            (
+                                                              _,
+                                                              _,
+                                                              _,
+                                                            ) => const Icon(
+                                                              Icons.qr_code_2,
+                                                              size: 72,
+                                                            ),
                                                       ),
                                                     ),
                                                   ),
@@ -1004,13 +1048,64 @@ class _QrScanPageState extends State<QrScanPage> {
                 icon: Icons.info_outline_rounded,
                 message: 'A leitura pela câmera não está disponível nesta versão do Windows. Use o QR Ops no navegador ou em um dispositivo compatível.',
               )
-            : MobileScanner(
-                controller: _controller,
-                onDetect: _handleCapture,
-                onDetectError: (error, _) {
-                  _setError(_messageForStartError(error));
-                },
-                errorBuilder: _buildScannerError,
+            : Stack(
+                fit: StackFit.expand,
+                children: [
+                  MobileScanner(
+                    controller: _controller,
+                    onDetect: _handleCapture,
+                    onDetectError: (error, _) {
+                      _setError(_messageForStartError(error));
+                    },
+                    errorBuilder: _buildScannerError,
+                  ),
+                  if (_cameraEnabled)
+                    IgnorePointer(
+                      child: Center(
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          width: 220,
+                          height: 220,
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: _pendingCameraResult == null
+                                  ? Colors.white
+                                  : Colors.greenAccent,
+                              width: 3,
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (_cameraEnabled)
+                    Positioned(
+                      left: 12,
+                      right: 12,
+                      bottom: 12,
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.68),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            child: Text(
+                              _pendingCameraResult == null
+                                  ? 'Enquadre o código na área marcada'
+                                  : 'Código detectado. Toque em Capturar QR Code.',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
       ),
     );
@@ -1078,6 +1173,19 @@ class _QrScanPageState extends State<QrScanPage> {
                 icon: const Icon(Icons.camera_alt_outlined),
                 label: Text(
                   _usesTestPreview ? 'Ativar leitor' : 'Ativar câmera',
+                ),
+              ),
+            if (_cameraEnabled && !_usesTestPreview)
+              FilledButton.icon(
+                key: const ValueKey('qr-scan-capture'),
+                onPressed: _pendingCameraResult == null
+                    ? null
+                    : _captureDetectedCode,
+                icon: const Icon(Icons.camera_alt_rounded),
+                label: Text(
+                  _pendingCameraResult == null
+                      ? 'Enquadre um QR Code'
+                      : 'Capturar QR Code',
                 ),
               ),
             if (_cameraEnabled && !_usesTestPreview && cameraCount > 1)

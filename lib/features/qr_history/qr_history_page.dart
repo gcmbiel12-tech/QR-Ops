@@ -148,7 +148,7 @@ class _QrHistoryPageState extends State<QrHistoryPage> {
       _reload();
     } on Object {
       if (mounted) {
-        setState(() => _error = 'Nao foi possivel limpar o historico.');
+        setState(() => _error = 'Não foi possível limpar o histórico.');
       }
     }
   }
@@ -269,7 +269,7 @@ class _QrHistoryPageState extends State<QrHistoryPage> {
                   key: const ValueKey('qr-history-filter'),
                   initialValue: _contentTypeFilter,
                   decoration: const InputDecoration(
-                    labelText: 'Tipo de conteudo',
+                    labelText: 'Tipo de conteúdo',
                     border: OutlineInputBorder(),
                   ),
                   items: const [

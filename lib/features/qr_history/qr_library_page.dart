@@ -84,7 +84,7 @@ class _QrLibraryPageState extends State<QrLibraryPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Nao foi possivel exportar PNG nesta plataforma.'),
+            content: Text('Não foi possível exportar o PNG nesta plataforma.'),
           ),
         );
       }
@@ -195,7 +195,7 @@ class _QrLibraryPageState extends State<QrLibraryPage> {
                   minLines: 2,
                   maxLines: 4,
                   decoration: const InputDecoration(
-                    labelText: 'Descricao',
+                    labelText: 'Descrição',
                     border: OutlineInputBorder(),
                   ),
                 ),

@@ -72,7 +72,7 @@ class QrBatchExportService {
     const pageWidth = 595.0;
     const pageHeight = 842.0;
     final qrSize = printSizeFor(size);
-    final perPage = labelSheet ? 12 : 2;
+    final perPage = labelSheet ? 18 : 2;
     final pageCount = (contents.length / perPage).ceil();
     final objects = <String>[''];
 
@@ -84,7 +84,7 @@ class QrBatchExportService {
     final catalogId = addObject('');
     final pagesId = addObject('');
     final fontId = addObject(
-      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
     );
     final pageIds = <int>[];
 
@@ -101,7 +101,7 @@ class QrBatchExportService {
         if (labelSheet) {
           const margin = 22.0;
           const columns = 3;
-          const cellHeight = 198.0;
+          const cellHeight = 132.0;
           cellWidth = (pageWidth - margin * 2) / columns;
           final column = localIndex % columns;
           final row = localIndex ~/ columns;
@@ -126,11 +126,16 @@ class QrBatchExportService {
           maxLength: labelSheet ? 38 : 90,
         );
         final fontSize = labelSheet ? 8.0 : 11.0;
-        final baseline = qrTop - (labelSheet ? 14 : 22);
+        final baseline = qrTop - (labelSheet ? 12 : 22);
         commands.writeln(
           '0 0 0 rg BT /F1 $fontSize Tf ${centerX - (label.length * fontSize * 0.22)} $baseline Td (${_escapePdf(label)}) Tj ET',
         );
-        if (!labelSheet) {
+        if (labelSheet) {
+          final itemLabel = 'Item ${index + 1} de ${contents.length}';
+          commands.writeln(
+            '0 0 0 rg BT /F1 6 Tf ${centerX - (itemLabel.length * 6 * 0.22)} ${baseline - 9} Td (${_escapePdf(itemLabel)}) Tj ET',
+          );
+        } else {
           commands.writeln(
             '0 0 0 rg BT /F1 8 Tf 24 ${baseline - 14} Td (Item ${index + 1} de ${contents.length}) Tj ET',
           );
@@ -234,14 +239,21 @@ class QrBatchExportService {
   }
 
   String _safePdfText(String value, {required int maxLength}) {
-    final latinSafe = value.replaceAll(RegExp(r'[^\x20-\x7E]'), '?');
+    final latinSafe = value;
     return latinSafe.length > maxLength
         ? '${latinSafe.substring(0, maxLength - 1)}…'.replaceAll('…', '...')
         : latinSafe;
   }
 
-  String _escapePdf(String value) => value
-      .replaceAll('\\', '\\\\')
-      .replaceAll('(', '\\(')
-      .replaceAll(')', '\\)');
+  String _escapePdf(String value) => value.runes.map((rune) {
+    if (rune == 0x5C) return r'\\';
+    if (rune == 0x28) return r'\(';
+    if (rune == 0x29) return r'\)';
+    if (rune == 0x0A || rune == 0x0D || rune == 0x09) return ' ';
+    if (rune >= 0x20 && rune <= 0x7E) return String.fromCharCode(rune);
+    if (rune >= 0xA0 && rune <= 0xFF) {
+      return '\\' + rune.toRadixString(8).padLeft(3, '0');
+    }
+    return '?';
+  }).join();
 }
