@@ -55,7 +55,7 @@
     const data = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) data[i] = binary.charCodeAt(i);
     const pdf = await pdfjs.getDocument({ data }).promise;
-    if (pdf.numPages > 30) throw new Error('O PDF tem mais de 30 páginas. Divida o arquivo em lotes menores.');
+    if (pdf.numPages > 100) throw new Error('O PDF tem mais de 100 páginas. Divida o arquivo em lotes menores.');
     const results = [];
     let worker;
     try {
@@ -206,9 +206,9 @@
     const data = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) data[i] = binary.charCodeAt(i);
     const pdf = await pdfjs.getDocument({ data }).promise;
-    if (pdf.numPages > 30) {
+    if (pdf.numPages > 100) {
       await pdf.destroy();
-      throw new Error('O PDF tem mais de 30 páginas. Divida o arquivo em lotes menores.');
+      throw new Error('O PDF tem mais de 100 páginas. Divida o arquivo em lotes menores.');
     }
     const results = [];
     let detector;

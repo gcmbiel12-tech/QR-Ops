@@ -7,10 +7,12 @@ import 'qr_pdf_decoder.dart';
 @JS('qrOpsScanPdfForQr')
 external JSPromise<JSString> _scanPdfForQr(JSString base64Pdf);
 
+const int maxQrPdfBytes = 100 * 1024 * 1024;
+
 Future<List<QrPdfDecodeResult>> decodeQrFromPdfBytes(Uint8List pdfBytes) async {
   if (pdfBytes.isEmpty) throw ArgumentError('O PDF está vazio.');
-  if (pdfBytes.length > 20 * 1024 * 1024) {
-    throw ArgumentError('O PDF excede o limite de 20 MB.');
+  if (pdfBytes.length > maxQrPdfBytes) {
+    throw ArgumentError('O PDF excede o limite de 100 MB.');
   }
   try {
     final raw = (await _scanPdfForQr(

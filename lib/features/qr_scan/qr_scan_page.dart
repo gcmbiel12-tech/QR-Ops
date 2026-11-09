@@ -361,7 +361,7 @@ class _QrScanPageState extends State<QrScanPage> {
       if (!mounted) return;
       setState(() {
         _isStarting = false;
-        _errorMessage = error is UnsupportedError ? error.message : 'Não foi possível ler o PDF. Use um arquivo não protegido por senha, com até 30 páginas e 20 MB.';
+        _errorMessage = error is UnsupportedError ? error.message : 'Não foi possível ler o PDF. Use um arquivo não protegido por senha, com até 100 páginas e 100 MB.';
       });
     }
   }
