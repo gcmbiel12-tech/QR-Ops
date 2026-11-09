@@ -200,6 +200,26 @@ class _QrScanPageState extends State<QrScanPage> {
     await _stopCamera();
   }
 
+  Future<void> _returnToScanHome() async {
+    _startAttempt++;
+    await _stopCamera();
+    if (!mounted) return;
+
+    setState(() {
+      _result = null;
+      _pendingCameraResult = null;
+      _pdfResults = [];
+      _pdfFileName = null;
+      _errorMessage = null;
+      _hasRead = false;
+      _isStarting = false;
+      _cameraEnabled = false;
+      _isSavingResult = false;
+      _resultSaved = false;
+      _isDraggingImage = false;
+    });
+  }
+
   Future<void> _stopCamera() async {
     if (_usesTestPreview || !_supportsCamera) return;
 
@@ -711,11 +731,7 @@ class _QrScanPageState extends State<QrScanPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text('Ler código', style: textTheme.headlineMedium),
-                const SizedBox(height: 8),
-                Text(
-                  'Aponte a câmera para um QR Code ou código de barras.',
-                  style: textTheme.bodyLarge,
-                ),
+
                 if (widget.repository != null) ...[
                   const SizedBox(height: 8),
                   Align(
@@ -910,7 +926,7 @@ class _QrScanPageState extends State<QrScanPage> {
                           const SizedBox(height: 8),
                           FilledButton.icon(
                             key: const ValueKey('qr-scan-again'),
-                            onPressed: _startScanning,
+                            onPressed: _returnToScanHome,
                             icon: const Icon(Icons.qr_code_scanner_rounded),
                             label: const Text('Ler novamente'),
                           ),
@@ -966,7 +982,7 @@ class _QrScanPageState extends State<QrScanPage> {
     if (!kIsWeb) return const SizedBox.shrink();
 
     return Text(
-      'No computador, selecione uma imagem ou arraste o arquivo para a área do leitor. Para usar a câmera, permita o acesso quando o navegador solicitar.',
+      'No computador, selecione ou arraste uma imagem. Para usar a câmera, permita o acesso.',
       key: const ValueKey('qr-scan-web-permission-hint'),
       style: textTheme.bodySmall,
     );

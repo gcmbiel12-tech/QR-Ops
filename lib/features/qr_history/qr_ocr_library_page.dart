@@ -284,9 +284,6 @@ class _QrOcrLibraryPageState extends State<QrOcrLibraryPage> {
                   ),
                 ],
               ),
-              const Text(
-                'Textos OCR salvos manualmente. Abrir ou pesquisar não inicia novo reconhecimento.',
-              ),
               const SizedBox(height: 12),
               TextField(
                 key: const ValueKey('ocr-library-search'),

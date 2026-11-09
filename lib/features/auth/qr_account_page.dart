@@ -6,7 +6,12 @@ import '../../domain/qr_record_repository.dart';
 import '../../data/qr_sync_service.dart';
 
 class QrAccountPage extends StatefulWidget {
-  const QrAccountPage({super.key, required this.auth, this.syncService, this.repository});
+  const QrAccountPage({
+    super.key,
+    required this.auth,
+    this.syncService,
+    this.repository,
+  });
 
   final QrAuthGateway? auth;
   final QrSyncService? syncService;
@@ -76,49 +81,90 @@ class _QrAccountPageState extends State<QrAccountPage> {
     }
   }
 
-  Future<void> _enableSync(QrAuthUser user, {required bool importExisting}) async {
+  Future<void> _enableSync(
+    QrAuthUser user, {
+    required bool importExisting,
+  }) async {
     final sync = widget.syncService;
     if (sync == null) {
-      setState(() => _error = 'A fila de sincronização não está disponível neste ambiente.');
+      setState(
+        () => _error =
+            'A fila de sincronização não está disponível neste ambiente.',
+      );
       return;
     }
     var consent = true;
     if (importExisting) {
       final records = await sync.localRecords();
       if (!mounted) return;
-      consent = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Importar dados locais?'),
-          content: Text('Serão enfileirados até ${records.length} registros locais (biblioteca e histórico) para a conta ${user.email}. Os dados só serão enviados após esta confirmação. O histórico mantém a retenção de sete dias.'),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
-            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Autorizar importação')),
-          ],
-        ),
-      ) ?? false;
+      consent =
+          await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Importar dados locais?'),
+              content: Text(
+                'Importar até ${records.length} registros locais para ${user.email}? O envio começa após sua confirmação.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Autorizar importação'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
     } else {
-      consent = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Ativar sincronização?'),
-          content: const Text('Somente novas alterações feitas enquanto esta conta estiver conectada serão sincronizadas. Os registros locais existentes não serão importados.'),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
-            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Ativar')),
-          ],
-        ),
-      ) ?? false;
+      consent =
+          await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Ativar sincronização?'),
+              content: const Text(
+                'Sincronizar apenas novas alterações. Os dados existentes não serão importados.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Ativar'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
     }
     if (!consent || !mounted) return;
-    setState(() { _syncBusy = true; _error = null; _message = null; });
+    setState(() {
+      _syncBusy = true;
+      _error = null;
+      _message = null;
+    });
     try {
-      await sync.enable(ownerId: user.id, importExistingLocalData: importExisting, consentGranted: true);
+      await sync.enable(
+        ownerId: user.id,
+        importExistingLocalData: importExisting,
+        consentGranted: true,
+      );
       final report = await sync.syncOnce(user.id);
       final pending = await sync.pendingCount(user.id);
-      if (mounted) setState(() => _message = 'Sincronização ativada. Aplicadas: ${report.applied}; conflitos: ${report.conflicts}; pendentes: $pending.');
+      if (mounted)
+        setState(
+          () => _message =
+              'Sincronização ativada. Aplicadas: ${report.applied}; conflitos: ${report.conflicts}; pendentes: $pending.',
+        );
     } on Object {
-      if (mounted) setState(() => _error = 'Não foi possível ativar ou sincronizar. As operações pendentes foram preservadas para nova tentativa.');
+      if (mounted)
+        setState(
+          () => _error = 'Não foi possível ativar ou sincronizar. As operações pendentes foram preservadas para nova tentativa.',
+        );
     } finally {
       if (mounted) setState(() => _syncBusy = false);
     }
@@ -127,13 +173,23 @@ class _QrAccountPageState extends State<QrAccountPage> {
   Future<void> _syncNow(QrAuthUser user) async {
     final sync = widget.syncService;
     if (sync == null) return;
-    setState(() { _syncBusy = true; _error = null; });
+    setState(() {
+      _syncBusy = true;
+      _error = null;
+    });
     try {
       final report = await sync.syncOnce(user.id);
       final pending = await sync.pendingCount(user.id);
-      if (mounted) setState(() => _message = 'Resultado: ${report.applied} aplicadas, ${report.conflicts} conflitos, ${report.deferred} adiadas; pendentes: $pending.');
+      if (mounted)
+        setState(
+          () => _message =
+              'Resultado: ${report.applied} aplicadas, ${report.conflicts} conflitos, ${report.deferred} adiadas; pendentes: $pending.',
+        );
     } on Object {
-      if (mounted) setState(() => _error = 'Falha de sincronização. Os dados locais e a fila foram preservados.');
+      if (mounted)
+        setState(
+          () => _error = 'Falha de sincronização. Os dados locais e a fila foram preservados.',
+        );
     } finally {
       if (mounted) setState(() => _syncBusy = false);
     }
@@ -144,7 +200,12 @@ class _QrAccountPageState extends State<QrAccountPage> {
     if (sync == null) return;
     final paused = await sync.isPaused(user.id);
     await sync.setPaused(user.id, !paused);
-    if (mounted) setState(() => _message = paused ? 'Sincronização retomada.' : 'Sincronização pausada. A fila foi preservada.');
+    if (mounted)
+      setState(
+        () => _message = paused
+            ? 'Sincronização retomada.'
+            : 'Sincronização pausada. A fila foi preservada.',
+      );
     if (paused) await _syncNow(user);
   }
 
@@ -152,7 +213,10 @@ class _QrAccountPageState extends State<QrAccountPage> {
     final sync = widget.syncService;
     if (sync == null) return;
     await sync.disable(user.id);
-    if (mounted) setState(() => _message = 'Sincronização desativada. Os dados locais, remotos e operações pendentes foram preservados.');
+    if (mounted)
+      setState(
+        () => _message = 'Sincronização desativada. Os dados locais, remotos e operações pendentes foram preservados.',
+      );
   }
 
   Future<void> _signOut() async {
@@ -195,7 +259,7 @@ class _QrAccountPageState extends State<QrAccountPage> {
           child: Padding(
             padding: EdgeInsets.all(24),
             child: Text(
-              'A autenticação ainda não está configurada neste ambiente. Configure SUPABASE_URL e SUPABASE_PUBLISHABLE_KEY com --dart-define e valide as URLs de redirecionamento no painel Supabase. A biblioteca e o histórico continuam disponíveis localmente.',
+              'Autenticação indisponível. Biblioteca e histórico seguem neste dispositivo.',
               textAlign: TextAlign.center,
             ),
           ),
@@ -232,8 +296,8 @@ class _QrAccountPageState extends State<QrAccountPage> {
                     const SizedBox(height: 8),
                     Text(
                       user == null
-                          ? 'Entre na sua conta ou crie uma. A biblioteca local continua neste dispositivo; ela não será enviada automaticamente.'
-                          : 'Conta: ${user.email}\nOs QR Codes locais continuam armazenados neste dispositivo. A sincronização ainda não está ativada.',
+                          ? 'Entre ou crie uma conta. A sincronização só ocorre após sua autorização.'
+                          : 'Conta: ${user.email}\nDados locais neste dispositivo.',
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 24),
@@ -249,7 +313,9 @@ class _QrAccountPageState extends State<QrAccountPage> {
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 FutureBuilder<int>(
-                                  future: widget.syncService!.pendingCount(user.id),
+                                  future: widget.syncService!.pendingCount(
+                                    user.id,
+                                  ),
                                   builder: (context, pendingSnapshot) => Text(
                                     'Sincronização: ${!enabled ? 'desativada' : 'ativada'} · operações pendentes: ${pendingSnapshot.data ?? '…'}',
                                     textAlign: TextAlign.center,
@@ -258,27 +324,53 @@ class _QrAccountPageState extends State<QrAccountPage> {
                                 const SizedBox(height: 12),
                                 if (!enabled) ...[
                                   FilledButton.icon(
-                                    onPressed: _syncBusy ? null : () => _enableSync(user, importExisting: true),
-                                    icon: const Icon(Icons.cloud_upload_outlined),
-                                    label: const Text('Ativar e importar dados locais'),
+                                    onPressed: _syncBusy
+                                        ? null
+                                        : () => _enableSync(
+                                            user,
+                                            importExisting: true,
+                                          ),
+                                    icon: const Icon(
+                                      Icons.cloud_upload_outlined,
+                                    ),
+                                    label: const Text(
+                                      'Ativar e importar dados locais',
+                                    ),
                                   ),
                                   OutlinedButton(
-                                    onPressed: _syncBusy ? null : () => _enableSync(user, importExisting: false),
-                                    child: const Text('Ativar sem importar dados existentes'),
+                                    onPressed: _syncBusy
+                                        ? null
+                                        : () => _enableSync(
+                                            user,
+                                            importExisting: false,
+                                          ),
+                                    child: const Text(
+                                      'Ativar sem importar dados existentes',
+                                    ),
                                   ),
                                 ] else ...[
                                   FilledButton.icon(
-                                    onPressed: _syncBusy ? null : () => _syncNow(user),
+                                    onPressed: _syncBusy
+                                        ? null
+                                        : () => _syncNow(user),
                                     icon: const Icon(Icons.sync),
                                     label: const Text('Sincronizar agora'),
                                   ),
                                   OutlinedButton(
-                                    onPressed: _syncBusy ? null : () => _togglePause(user),
-                                    child: const Text('Pausar / retomar sincronização'),
+                                    onPressed: _syncBusy
+                                        ? null
+                                        : () => _togglePause(user),
+                                    child: const Text(
+                                      'Pausar / retomar sincronização',
+                                    ),
                                   ),
                                   OutlinedButton(
-                                    onPressed: _syncBusy ? null : () => _disableSync(user),
-                                    child: const Text('Desativar sincronização'),
+                                    onPressed: _syncBusy
+                                        ? null
+                                        : () => _disableSync(user),
+                                    child: const Text(
+                                      'Desativar sincronização',
+                                    ),
                                   ),
                                 ],
                               ],

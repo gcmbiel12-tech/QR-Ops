@@ -293,7 +293,7 @@ class _QrBatchCreatePageState extends State<QrBatchCreatePage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const Text(
-                    'Informe códigos separados por linha, vírgula ou ponto e vírgula, ou intervalos como 1001-1020. Revise os itens antes de confirmar.',
+                    'Separe por linha, vírgula ou ponto e vírgula. Intervalos: 1001-1020.',
                   ),
                   const SizedBox(height: 12),
                   TextField(
@@ -312,9 +312,7 @@ class _QrBatchCreatePageState extends State<QrBatchCreatePage> {
                     value: _hyphenLiteral,
                     onChanged: (value) =>
                         setState(() => _hyphenLiteral = value ?? false),
-                    title: const Text(
-                      'Tratar hífen como parte do código (não como intervalo)',
-                    ),
+                    title: const Text('Hífen faz parte do código'),
                     controlAffinity: ListTileControlAffinity.leading,
                   ),
                   Align(
@@ -382,7 +380,7 @@ class _QrBatchCreatePageState extends State<QrBatchCreatePage> {
                     ),
                     if (_duplicates.isNotEmpty)
                       Text(
-                        'Duplicatas detectadas: ${_duplicates.join(', ')}. Elas foram mantidas para sua decisão.',
+                        'Duplicatas: ${_duplicates.join(', ')}.',
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.error,
                         ),

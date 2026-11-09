@@ -65,20 +65,6 @@ class _QrCreatePageState extends State<QrCreatePage> {
     QrContentType.whatsapp,
   ];
 
-  static const _descriptions = <QrContentType, String>{
-    QrContentType.text: 'Compartilhe textos e informações.',
-    QrContentType.url: 'Direcione para um site.',
-    QrContentType.image:
-        'Crie um QR Code para uma imagem hospedada publicamente.',
-    QrContentType.pdf:
-        'Crie um QR Code para um documento PDF hospedado publicamente.',
-    QrContentType.phone: 'Facilite o contato por telefone.',
-    QrContentType.email: 'Prepare um e-mail com assunto e mensagem.',
-    QrContentType.wifi: 'Compartilhe o acesso à rede Wi-Fi.',
-    QrContentType.whatsapp:
-        'Abra uma conversa com mensagem opcional pré-preenchida.',
-  };
-
   static const _icons = <QrContentType, IconData>{
     QrContentType.text: Icons.text_fields,
     QrContentType.url: Icons.language,
@@ -802,55 +788,7 @@ class _QrCreatePageState extends State<QrCreatePage> {
                     label: const Text('Criação em massa'),
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Escolha o que deseja compartilhar. O QR Code será montado '
-                  'com os dados que você informar.',
-                  style: textTheme.bodyLarge?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Card(
-                  color: colors.primaryContainer,
-                  clipBehavior: Clip.antiAlias,
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.qr_code_2_rounded,
-                          size: 40,
-                          color: colors.onPrimaryContainer,
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Comece por um modelo',
-                                style: textTheme.titleLarge?.copyWith(
-                                  color: colors.onPrimaryContainer,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Selecione uma opção abaixo para preencher '
-                                'os detalhes.',
-                                style: textTheme.bodyMedium?.copyWith(
-                                  color: colors.onPrimaryContainer,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
                 Text('Modelos de QR Code', style: textTheme.titleLarge),
                 const SizedBox(height: 12),
                 LayoutBuilder(
@@ -917,13 +855,6 @@ class _QrCreatePageState extends State<QrCreatePage> {
                                           ),
                                         ],
                                       ),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        _descriptions[type]!,
-                                        style: textTheme.bodyMedium?.copyWith(
-                                          color: colors.onSurfaceVariant,
-                                        ),
-                                      ),
                                     ],
                                   ),
                                 ),
@@ -960,9 +891,7 @@ class _QrCreatePageState extends State<QrCreatePage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text('Criar QR Code', style: textTheme.headlineMedium),
-                const SizedBox(height: 8),
-                const Text('O conteúdo e o QR Code ficam neste dispositivo.'),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
                 Row(
                   children: [
                     Expanded(
@@ -1010,10 +939,6 @@ class _QrCreatePageState extends State<QrCreatePage> {
                 ],
                 const SizedBox(height: 20),
                 Text('Modelos visuais', style: textTheme.titleMedium),
-                const SizedBox(height: 4),
-                const Text(
-                  'Escolha um estilo. O conteúdo preenchido será preservado.',
-                ),
                 const SizedBox(height: 12),
                 for (final category in QrVisualCategory.values) ...[
                   Padding(

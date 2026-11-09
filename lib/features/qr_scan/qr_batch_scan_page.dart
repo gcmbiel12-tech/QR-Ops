@@ -32,8 +32,7 @@ class _QrBatchScanPageState extends State<QrBatchScanPage> {
   bool _allowDuplicates = false;
   bool _saving = false;
   String? _message;
-  String? _lastValue;
-  DateTime? _lastCaptureAt;
+  String? _pendingValue;
 
   @override
   void initState() {
@@ -59,6 +58,7 @@ class _QrBatchScanPageState extends State<QrBatchScanPage> {
         setState(() {
           _running = true;
           _message = 'Leitura ativa. Posicione um código diante da câmera.';
+          _pendingValue = null;
         });
       }
     } on Object {
@@ -76,9 +76,28 @@ class _QrBatchScanPageState extends State<QrBatchScanPage> {
     if (mounted) {
       setState(() {
         _running = false;
+        _pendingValue = null;
         _message = 'Leitura pausada. Pressione Retomar para continuar.';
       });
     }
+  }
+
+  void _capturePending() {
+    final value = _pendingValue;
+    if (!_running || _finished || value == null) return;
+    if (!_allowDuplicates && !_seen.add(value)) {
+      setState(() {
+        _pendingValue = null;
+        _message = 'C\u00f3digo duplicado ignorado.';
+      });
+      return;
+    }
+    _seen.add(value);
+    setState(() {
+      _items.add(value);
+      _pendingValue = null;
+      _message = 'C\u00f3digo capturado. Posicione o pr\u00f3ximo QR Code na mira e pressione Capturar.';
+    });
   }
 
   Future<void> _finish() async {
@@ -92,34 +111,42 @@ class _QrBatchScanPageState extends State<QrBatchScanPage> {
   }
 
   void _onDetect(BarcodeCapture capture) {
-    if (!_running || _finished) return;
-    final barcode = capture.barcodes
-        .where((value) => value.rawValue?.trim().isNotEmpty ?? false)
-        .firstOrNull;
-    final value = barcode?.rawValue?.trim();
-    if (value == null) return;
-    final now = DateTime.now();
-    if (value == _lastValue &&
-        _lastCaptureAt != null &&
-        now.difference(_lastCaptureAt!) < const Duration(milliseconds: 1500)) {
-      return;
-    }
-    _lastValue = value;
-    _lastCaptureAt = now;
-    if (!_allowDuplicates && !_seen.add(value)) {
-      if (mounted) {
-        setState(
-          () =>
-              _message = 'Código duplicado ignorado. Total: ${_items.length}.',
-        );
+    if (!_running || _finished || capture.size.isEmpty) return;
+    final candidates = capture.barcodes
+        .where((barcode) => barcode.rawValue?.trim().isNotEmpty ?? false)
+        .where(
+          (barcode) =>
+              _allowDuplicates || !_seen.contains(barcode.rawValue!.trim()),
+        )
+        .toList(growable: false);
+    if (candidates.isEmpty) return;
+
+    final centered = candidates.where((barcode) {
+      if (barcode.corners.isEmpty) return false;
+      final center =
+          barcode.corners.reduce((a, b) => a + b) /
+          barcode.corners.length.toDouble();
+      final x = center.dx / capture.size.width;
+      final y = center.dy / capture.size.height;
+      return x >= 0.25 && x <= 0.75 && y >= 0.15 && y <= 0.85;
+    }).firstOrNull;
+
+    final selected =
+        centered ??
+        (candidates.length == 1 && candidates.first.corners.isEmpty
+            ? candidates.first
+            : null);
+    final value = selected?.rawValue?.trim();
+    if (value == null || value.isEmpty) {
+      if (mounted && _pendingValue != null) {
+        setState(() => _pendingValue = null);
       }
       return;
     }
-    _seen.add(value);
-    if (mounted) {
+    if (_pendingValue != value && mounted) {
       setState(() {
-        _items.add(value);
-        _message = 'Código adicionado ao lote (${_items.length}).';
+        _pendingValue = value;
+        _message = 'QR Code enquadrado. Confira a mira e pressione Capturar.';
       });
     }
   }
@@ -274,32 +301,78 @@ class _QrBatchScanPageState extends State<QrBatchScanPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  'A câmera não registra leituras ao abrir esta tela. Pressione Iniciar leitura para começar. A captura é sequencial; a detecção de vários códigos no mesmo quadro não é prometida.',
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 260,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: _finished
-                        ? const ColoredBox(
-                            color: Colors.black12,
-                            child: Center(
-                              child: Icon(Icons.fact_check_outlined, size: 48),
-                            ),
-                          )
-                        : MobileScanner(
-                            controller: _controller,
-                            onDetect: _onDetect,
-                            errorBuilder: (context, error) => Center(
-                              child: Text(
-                                'Câmera indisponível: ${error.errorCode.name}',
+                const SizedBox(height: 8),
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    child: SizedBox(
+                      height: 300,
+                      width: double.infinity,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: _finished
+                            ? const ColoredBox(
+                                color: Colors.black12,
+                                child: Center(
+                                  child: Icon(
+                                    Icons.fact_check_outlined,
+                                    size: 48,
+                                  ),
+                                ),
+                              )
+                            : Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  MobileScanner(
+                                    controller: _controller,
+                                    onDetect: _onDetect,
+                                    errorBuilder: (context, error) =>
+                                        const Center(
+                                          child: Text(
+                                            'C\u00e2mera indispon\u00edvel. Verifique as permiss\u00f5es.',
+                                          ),
+                                        ),
+                                  ),
+                                  IgnorePointer(
+                                    child: CustomPaint(
+                                      painter: _BatchScanReticlePainter(),
+                                    ),
+                                  ),
+                                  if (_pendingValue != null)
+                                    const Positioned(
+                                      top: 12,
+                                      left: 12,
+                                      right: 12,
+                                      child: Center(
+                                        child: Chip(
+                                          avatar: Icon(
+                                            Icons.center_focus_strong,
+                                            size: 18,
+                                          ),
+                                          label: Text('QR Code enquadrado'),
+                                        ),
+                                      ),
+                                    ),
+                                ],
                               ),
-                            ),
-                          ),
+                      ),
+                    ),
                   ),
                 ),
+                if (_running) ...[
+                  const SizedBox(height: 10),
+                  FilledButton.icon(
+                    key: const ValueKey('qr-batch-scan-capture'),
+                    onPressed: _pendingValue == null ? null : _capturePending,
+                    icon: const Icon(Icons.camera_alt_outlined),
+                    label: const Text('Capturar QR Code'),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Enquadre um QR Code na mira e toque em Capturar.',
+                    textAlign: TextAlign.center,
+                  ),
+                ],
                 CheckboxListTile(
                   contentPadding: EdgeInsets.zero,
                   value: _allowDuplicates,
@@ -436,4 +509,55 @@ class _QrBatchScanPageState extends State<QrBatchScanPage> {
       ),
     ),
   );
+}
+
+class _BatchScanReticlePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final side = size.height * 0.72;
+    final rect = Rect.fromCenter(
+      center: size.center(Offset.zero),
+      width: side,
+      height: side,
+    );
+    final shade = Paint()..color = Colors.black.withValues(alpha: 0.38);
+    final cutout = Path()
+      ..fillType = PathFillType.evenOdd
+      ..addRect(Offset.zero & size)
+      ..addRRect(RRect.fromRectAndRadius(rect, const Radius.circular(12)));
+    canvas.drawPath(cutout, shade);
+    final border = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(12)),
+      border,
+    );
+    final cornerPaint = Paint()
+      ..color = Colors.greenAccent
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 5
+      ..strokeCap = StrokeCap.round;
+    const cornerLength = 28.0;
+    for (final corner in [
+      rect.topLeft,
+      rect.topRight,
+      rect.bottomLeft,
+      rect.bottomRight,
+    ]) {
+      final dx = corner == rect.topLeft || corner == rect.bottomLeft
+          ? cornerLength
+          : -cornerLength;
+      final dy = corner == rect.topLeft || corner == rect.topRight
+          ? cornerLength
+          : -cornerLength;
+      canvas
+        ..drawLine(corner, corner.translate(dx, 0), cornerPaint)
+        ..drawLine(corner, corner.translate(0, dy), cornerPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _BatchScanReticlePainter oldDelegate) => false;
 }

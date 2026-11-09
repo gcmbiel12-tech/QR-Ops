@@ -251,8 +251,6 @@ class _QrHistoryPageState extends State<QrHistoryPage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                const Text('Os registros permanecem neste dispositivo.'),
                 const SizedBox(height: 12),
                 TextField(
                   key: const ValueKey('qr-history-search'),

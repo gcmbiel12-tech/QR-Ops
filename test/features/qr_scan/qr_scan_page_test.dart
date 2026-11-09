@@ -160,6 +160,8 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('qr-scan-again')));
     await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('qr-scan-start')), findsOneWidget);
+    expect(find.byKey(const ValueKey('qr-scan-result')), findsNothing);
     await tester.tap(find.byKey(const ValueKey('fake-scan-once')));
     await tester.pumpAndSettle();
     expect(

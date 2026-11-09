@@ -36,12 +36,7 @@ class HomePage extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  'Tudo pronto para o próximo passo.',
-                  style: theme.textTheme.bodyLarge,
-                ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
                 Card(
                   color: colors.primaryContainer,
                   clipBehavior: Clip.antiAlias,
@@ -61,7 +56,7 @@ class HomePage extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'O que vamos criar hoje?',
+                                'Comece por aqui',
                                 style: theme.textTheme.titleLarge?.copyWith(
                                   color: colors.onPrimaryContainer,
                                   fontWeight: FontWeight.w700,
@@ -69,7 +64,7 @@ class HomePage extends StatelessWidget {
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'Gere um QR Code, leia um código ou consulte os itens salvos.',
+                                'Crie, leia e organize códigos.',
                                 style: theme.textTheme.bodyMedium?.copyWith(
                                   color: colors.onPrimaryContainer,
                                 ),
@@ -94,29 +89,20 @@ class HomePage extends StatelessWidget {
                 _AreaShortcut(
                   icon: Icons.qr_code_scanner_rounded,
                   title: 'Ler um código',
-                  description: 'Leia QR Codes e códigos de barras.',
+                  description: 'QR Codes e códigos de barras',
                   onTap: () => onNavigate(2),
                 ),
                 _AreaShortcut(
                   icon: Icons.document_scanner_outlined,
                   title: 'Scanear texto',
-                  description:
-                      'Reconheça texto em uma imagem após pressionar Scanear.',
+                  description: 'Texto em imagens e PDFs',
                   onTap: () => onNavigate(3),
                 ),
                 _AreaShortcut(
                   icon: Icons.folder_rounded,
                   title: 'Organizar códigos',
-                  description:
-                      'Consulte os códigos e textos salvos neste dispositivo.',
+                  description: 'Biblioteca e histórico',
                   onTap: () => onNavigate(4),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Mais recursos serão adicionados aqui.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
                 ),
               ],
             ),

@@ -294,17 +294,6 @@ class _QrOcrPageState extends State<QrOcrPage> {
                   'Scanear texto',
                   style: Theme.of(context).textTheme.headlineMedium,
                 ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Escolha uma imagem ou tire uma foto. O OCR só começa quando você pressionar Scanear. A imagem de origem fica apenas em memória e não é salva no histórico.',
-                ),
-                if (kIsWeb) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    'No navegador, a biblioteca OCR e o idioma português são baixados sob demanda de um CDN público; a imagem é processada no próprio navegador e não é enviada para esse serviço.',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
                 const SizedBox(height: 12),
                 Wrap(
                   spacing: 8,
@@ -351,9 +340,7 @@ class _QrOcrPageState extends State<QrOcrPage> {
                               ),
                               const SizedBox(height: 8),
                               Text(_sourceFileName ?? 'PDF selecionado'),
-                              const Text(
-                                'O texto será extraído de todas as páginas (até 30).',
-                              ),
+                              const Text('Até 30 páginas.'),
                             ],
                           )
                         : ClipRRect(
@@ -387,7 +374,7 @@ class _QrOcrPageState extends State<QrOcrPage> {
                   key: const ValueKey('ocr-name'),
                   controller: _nameController,
                   decoration: const InputDecoration(
-                    labelText: 'Nome do resultado (opcional)',
+                    labelText: 'Nome (opcional)',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -399,7 +386,7 @@ class _QrOcrPageState extends State<QrOcrPage> {
                   maxLines: 16,
                   onChanged: (_) => setState(() {}),
                   decoration: const InputDecoration(
-                    labelText: 'Texto reconhecido — revise antes de usar',
+                    labelText: 'Texto reconhecido',
                     border: OutlineInputBorder(),
                     alignLabelWithHint: true,
                   ),
