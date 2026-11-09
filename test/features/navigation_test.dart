@@ -41,7 +41,8 @@ void main() {
         await tester.pumpWidget(QrOpsApp(repository: repository));
 
         expect(find.byType(NavigationRail), findsOneWidget);
-        expect(find.text('Tudo pronto para o próximo passo.'), findsOneWidget);
+        expect(find.text('Comece por aqui'), findsOneWidget);
+        expect(find.text('Crie, leia e organize códigos.'), findsOneWidget);
         expect(find.text('Site ou link'), findsNothing);
         expect(find.text('Acesso rápido'), findsOneWidget);
 
@@ -83,7 +84,8 @@ void main() {
 
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.byType(NavigationRail), findsNothing);
-    expect(find.text('Tudo pronto para o próximo passo.'), findsOneWidget);
+    expect(find.text('Comece por aqui'), findsOneWidget);
+    expect(find.text('Crie, leia e organize códigos.'), findsOneWidget);
     expect(find.text('Site ou link'), findsNothing);
   });
 

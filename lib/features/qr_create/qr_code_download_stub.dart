@@ -6,3 +6,10 @@ Future<void> downloadQrCodePng(
 }) async {
   throw UnsupportedError('O download de PNG está disponível na versão Web.');
 }
+
+Future<void> downloadQrCodePdf(
+  Uint8List bytes, {
+  required String filename,
+}) async {
+  throw UnsupportedError('O download de PDF está disponível na versão Web.');
+}

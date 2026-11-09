@@ -13,7 +13,11 @@ void main() {
         const MaterialApp(home: QrAccountPage(auth: null)),
       );
 
-      expect(find.textContaining('ainda não está configurada'), findsOneWidget);
+      expect(find.textContaining('Autenticação indisponível.'), findsOneWidget);
+      expect(
+        find.textContaining('Biblioteca e histórico seguem neste dispositivo.'),
+        findsOneWidget,
+      );
       expect(find.byKey(const ValueKey('auth-email')), findsNothing);
     },
   );

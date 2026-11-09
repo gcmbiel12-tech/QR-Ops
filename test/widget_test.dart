@@ -330,6 +330,19 @@ void main() {
       find.byKey(const ValueKey('qr-content-field')),
       'Conteúdo que deve ser preservado',
     );
+    await tester.ensureVisible(find.byKey(const ValueKey('qr-create-button')));
+    await tester.tap(find.byKey(const ValueKey('qr-create-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('qr-preview')), findsOneWidget);
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('qr-customize-appearance-button')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('qr-customize-appearance-button')),
+    );
+    await tester.pumpAndSettle();
+
     await tester.ensureVisible(
       find.byKey(const ValueKey('qr-model-creator-pop')),
     );
@@ -343,11 +356,6 @@ void main() {
           .text,
       'Conteúdo que deve ser preservado',
     );
-
-    await tester.ensureVisible(find.byKey(const ValueKey('qr-create-button')));
-    await tester.ensureVisible(find.byKey(const ValueKey('qr-create-button')));
-    await tester.tap(find.byKey(const ValueKey('qr-create-button')));
-    await tester.pumpAndSettle();
 
     final preview = tester.widget<QrCodePreview>(find.byType(QrCodePreview));
     expect(preview.frame, QrFrameStyle.stars);
