@@ -17,4 +17,21 @@ fi
 
 flutter --version
 flutter pub get --enforce-lockfile
-flutter build web --release --no-pub
+
+BUILD_DEFINES=()
+if [[ -n "${SUPABASE_URL:-}" && -n "${SUPABASE_PUBLISHABLE_KEY:-}" ]]; then
+  BUILD_DEFINES+=(
+    "--dart-define=SUPABASE_URL=${SUPABASE_URL}"
+    "--dart-define=SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY}"
+  )
+elif [[ -n "${SUPABASE_URL:-}" || -n "${SUPABASE_PUBLISHABLE_KEY:-}" ]]; then
+  echo "Error: configure SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY together." >&2
+  exit 1
+elif [[ "${VERCEL:-}" == "1" ]]; then
+  echo "Error: configure SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY for the Vercel build." >&2
+  exit 1
+else
+  echo "Warning: local build without Supabase; remote auth and sync will be unavailable."
+fi
+
+flutter build web --release --no-pub "${BUILD_DEFINES[@]}"

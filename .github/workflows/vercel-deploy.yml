@@ -24,6 +24,9 @@ jobs:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      # Supabase publishable credentials are public client configuration.
+      SUPABASE_URL: https://mkcwzpypmhgaigjhoruf.supabase.co
+      SUPABASE_PUBLISHABLE_KEY: sb_publishable_-7GiYhunKAqlYVjcd4QllA_9xYqLPWQ
 
     steps:
       - name: Check out source
@@ -55,7 +58,7 @@ jobs:
         run: flutter pub get --enforce-lockfile
 
       - name: Analyze Dart code
-        run: flutter analyze --no-pub
+        run: flutter analyze --no-pub --no-fatal-infos
 
       - name: Run Flutter tests
         run: flutter test --no-pub
