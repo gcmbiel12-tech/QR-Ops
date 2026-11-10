@@ -54,6 +54,18 @@ void main() {
     expect(find.byKey(const ValueKey('auth-email')), findsOneWidget);
   });
 
+  testWidgets('starts Google authentication from the account form', (
+    tester,
+  ) async {
+    final auth = _FakeAuthGateway();
+    await tester.pumpWidget(MaterialApp(home: QrAccountPage(auth: auth)));
+
+    await tester.tap(find.byKey(const ValueKey('google-login')));
+    await tester.pumpAndSettle();
+
+    expect(auth.googleSignInCalls, 1);
+  });
+
   testWidgets('supports registration and password recovery requests', (
     tester,
   ) async {
@@ -112,6 +124,7 @@ class _FakeAuthGateway implements QrAuthGateway {
   final _controller = StreamController<QrAuthUser?>.broadcast(sync: true);
   QrAuthUser? _user;
   int signInCalls = 0;
+  int googleSignInCalls = 0;
   int signUpCalls = 0;
   int resetCalls = 0;
   int signOutCalls = 0;
@@ -129,6 +142,11 @@ class _FakeAuthGateway implements QrAuthGateway {
     if (failSignIn) throw StateError('service unavailable');
     _user = QrAuthUser(id: 'user-1', email: email);
     _controller.add(_user);
+  }
+
+  @override
+  Future<void> signInWithGoogle() async {
+    googleSignInCalls++;
   }
 
   @override

@@ -81,6 +81,29 @@ class _QrAccountPageState extends State<QrAccountPage> {
     }
   }
 
+  Future<void> _signInWithGoogle() async {
+    final auth = widget.auth;
+    if (auth == null) return;
+    setState(() {
+      _busy = true;
+      _message = null;
+      _error = null;
+    });
+    try {
+      await auth.signInWithGoogle();
+    } on AuthException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } on Object {
+      if (mounted) {
+        setState(
+          () => _error = 'Não foi possível iniciar o login com Google. Verifique a configuração do provedor e tente novamente.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _enableSync(
     QrAuthUser user, {
     required bool importExisting,
@@ -442,6 +465,18 @@ class _QrAccountPageState extends State<QrAccountPage> {
                                     : Text(_actionLabel),
                               ),
                             ),
+                            if (_mode != _AuthMode.resetPassword) ...[
+                              const SizedBox(height: 12),
+                              OutlinedButton.icon(
+                                key: const ValueKey('google-login'),
+                                onPressed: _busy ? null : _signInWithGoogle,
+                                icon: const Icon(Icons.g_mobiledata, size: 28),
+                                label: const Text('Continuar com Google'),
+                                style: OutlinedButton.styleFrom(
+                                  minimumSize: const Size.fromHeight(48),
+                                ),
+                              ),
+                            ],
                             TextButton(
                               onPressed: _busy
                                   ? null

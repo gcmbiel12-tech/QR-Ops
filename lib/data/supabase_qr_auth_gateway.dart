@@ -24,6 +24,14 @@ class SupabaseQrAuthGateway implements QrAuthGateway {
   }
 
   @override
+  Future<void> signInWithGoogle() async {
+    final launched = await client.auth.signInWithOAuth(OAuthProvider.google);
+    if (!launched) {
+      throw StateError('Não foi possível iniciar a autenticação com Google.');
+    }
+  }
+
+  @override
   Future<void> signUp({required String email, required String password}) async {
     await client.auth.signUp(email: email.trim(), password: password);
   }

@@ -13,6 +13,8 @@ abstract interface class QrAuthGateway {
 
   Future<void> signIn({required String email, required String password});
 
+  Future<void> signInWithGoogle();
+
   Future<void> signUp({required String email, required String password});
 
   Future<void> sendPasswordReset({required String email});
