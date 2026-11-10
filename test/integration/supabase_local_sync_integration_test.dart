@@ -3,11 +3,13 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:qr_ops/data/supabase_qr_auth_gateway.dart';
+import 'package:qr_ops/data/supabase_qr_sync_transport.dart';
 
 void main() {
   final url = Platform.environment['QR_OPS_LOCAL_SUPABASE_URL'];
   final key = Platform.environment['QR_OPS_LOCAL_SUPABASE_KEY'];
-  final configured = url != null && url.isNotEmpty && key != null && key.isNotEmpty;
+  final configured =
+      url != null && url.isNotEmpty && key != null && key.isNotEmpty;
 
   test(
     'real local Supabase auth, RPC idempotency, tombstones and RLS isolation',
@@ -15,12 +17,16 @@ void main() {
       final clientA = SupabaseClient(
         url!,
         key!,
-        authOptions: const AuthClientOptions(authFlowType: AuthFlowType.implicit),
+        authOptions: const AuthClientOptions(
+          authFlowType: AuthFlowType.implicit,
+        ),
       );
       final clientB = SupabaseClient(
         url,
         key,
-        authOptions: const AuthClientOptions(authFlowType: AuthFlowType.implicit),
+        authOptions: const AuthClientOptions(
+          authFlowType: AuthFlowType.implicit,
+        ),
       );
       addTearDown(() async {
         await clientA.dispose();
@@ -41,6 +47,9 @@ void main() {
       await authB.signIn(email: emailB, password: passwordB);
       expect(authA.currentUser?.email, emailA);
       expect(authB.currentUser?.email, emailB);
+      await authA.updateDisplayName('Conta de teste A');
+      expect(authA.currentUser?.displayName, 'Conta de teste A');
+      expect(authA.currentUser?.provider, 'email');
 
       final sessionBeforeRefresh = clientA.auth.currentSession;
       final refreshed = await clientA.auth.refreshSession();
@@ -68,13 +77,17 @@ void main() {
       };
       final first = await clientA.rpc(
         'apply_qr_sync_batch',
-        params: {'p_mutations': [create]},
+        params: {
+          'p_mutations': [create],
+        },
       ) as List;
       expect(first.single['status'], 'applied');
 
       final duplicate = await clientA.rpc(
         'apply_qr_sync_batch',
-        params: {'p_mutations': [create]},
+        params: {
+          'p_mutations': [create],
+        },
       ) as List;
       expect(duplicate.single['status'], 'already_applied');
       final ownedRows = await clientA
@@ -82,6 +95,9 @@ void main() {
           .select('id, revision')
           .eq('id', recordId);
       expect(ownedRows, hasLength(1));
+      final snapshotA = await SupabaseQrSyncTransport(clientA)
+          .fetchSnapshot(authA.currentUser!.id);
+      expect(snapshotA.records.any((record) => record.id == recordId), isTrue);
 
       final visibleToB = await clientB
           .from('qr_records')
@@ -115,6 +131,9 @@ void main() {
         },
       ) as List;
       expect(delete.single['status'], 'applied');
+      final deletedSnapshot = await SupabaseQrSyncTransport(clientA)
+          .fetchSnapshot(authA.currentUser!.id);
+      expect(deletedSnapshot.tombstones.containsKey(recordId), isTrue);
 
       final staleUpsert = await clientA.rpc(
         'apply_qr_sync_batch',

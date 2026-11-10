@@ -21,13 +21,13 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
       throw ArgumentError.value(record.content, 'record.content');
     }
 
+    final owner = syncOwnerContext?.userId;
     await _database.transaction((txn) async {
       await txn.insert(
         'qr_records',
-        _toRow(record),
+        _toRow(record, ownerId: owner),
         conflictAlgorithm: ConflictAlgorithm.abort,
       );
-      final owner = syncOwnerContext?.userId;
       if (owner != null && record.operation != QrRecordOperation.ocr) {
         await _enqueue(
           txn,
@@ -51,8 +51,11 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
     if (limit < 1) {
       throw ArgumentError.value(limit, 'limit', 'Must be positive.');
     }
+    final owner = syncOwnerContext?.userId;
     final rows = await _database.query(
       'qr_records',
+      where: _ownerClause(owner),
+      whereArgs: _ownerArgs(owner),
       orderBy: 'created_at_ms DESC, id DESC',
       limit: limit,
     );
@@ -61,10 +64,11 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
 
   @override
   Future<QrRecord?> findById(String id) async {
+    final owner = syncOwnerContext?.userId;
     final rows = await _database.query(
       'qr_records',
-      where: 'id = ?',
-      whereArgs: [id],
+      where: 'id = ? AND ${_ownerClause(owner)}',
+      whereArgs: [id, ..._ownerArgs(owner)],
       limit: 1,
     );
     return rows.isEmpty ? null : _fromRow(rows.single);
@@ -72,16 +76,16 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
 
   @override
   Future<bool> deleteById(String id) async {
+    final owner = syncOwnerContext?.userId;
     return _database.transaction((txn) async {
       final rows = await txn.query(
         'qr_records',
-        where: 'id = ?',
-        whereArgs: [id],
+        where: 'id = ? AND ${_ownerClause(owner)}',
+        whereArgs: [id, ..._ownerArgs(owner)],
         limit: 1,
       );
       if (rows.isEmpty) return false;
       final record = _fromRow(rows.single);
-      final owner = syncOwnerContext?.userId;
       if (owner != null && record.operation != QrRecordOperation.ocr) {
         final baseRevision = await _nextBaseRevision(
           txn,
@@ -99,18 +103,23 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
           changedAt: DateTime.now().toUtc(),
         );
       }
-      await txn.delete('qr_records', where: 'id = ?', whereArgs: [id]);
+      await txn.delete(
+        'qr_records',
+        where: 'id = ? AND ${_ownerClause(owner)}',
+        whereArgs: [id, ..._ownerArgs(owner)],
+      );
       return true;
     });
   }
 
   @override
   Future<bool> updateById(QrRecord record) async {
+    final owner = syncOwnerContext?.userId;
     return _database.transaction((txn) async {
       final rows = await txn.query(
         'qr_records',
-        where: 'id = ?',
-        whereArgs: [record.id],
+        where: 'id = ? AND ${_ownerClause(owner)}',
+        whereArgs: [record.id, ..._ownerArgs(owner)],
         limit: 1,
       );
       if (rows.isEmpty) return false;
@@ -118,11 +127,10 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
       final preserved = record.withRevision(old.revision);
       await txn.update(
         'qr_records',
-        _toRow(preserved),
-        where: 'id = ?',
-        whereArgs: [record.id],
+        _toRow(preserved, ownerId: owner),
+        where: 'id = ? AND ${_ownerClause(owner)}',
+        whereArgs: [record.id, ..._ownerArgs(owner)],
       );
-      final owner = syncOwnerContext?.userId;
       if (owner != null && preserved.operation != QrRecordOperation.ocr) {
         await _enqueue(
           txn,
@@ -143,13 +151,13 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
 
   @override
   Future<int> pruneReadHistoryBefore(DateTime cutoffUtc) async {
+    final owner = syncOwnerContext?.userId;
     return _database.transaction((txn) async {
-      final owner = syncOwnerContext?.userId;
       if (owner != null) {
         final rows = await txn.query(
           'qr_records',
-          where: 'operation_type = ? AND created_at_ms < ?',
-          whereArgs: ['read', cutoffUtc.toUtc().millisecondsSinceEpoch],
+          where: 'operation_type = ? AND created_at_ms < ? AND owner_id = ?',
+          whereArgs: ['read', cutoffUtc.toUtc().millisecondsSinceEpoch, owner],
         );
         for (final row in rows) {
           final record = _fromRow(row);
@@ -171,8 +179,13 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
       }
       return txn.delete(
         'qr_records',
-        where: 'operation_type = ? AND created_at_ms < ?',
-        whereArgs: ['read', cutoffUtc.toUtc().millisecondsSinceEpoch],
+        where:
+            'operation_type = ? AND created_at_ms < ? AND ${_ownerClause(owner)}',
+        whereArgs: [
+          'read',
+          cutoffUtc.toUtc().millisecondsSinceEpoch,
+          ..._ownerArgs(owner),
+        ],
       );
     });
   }
@@ -184,8 +197,8 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
       if (owner != null) {
         final rows = await txn.query(
           'qr_records',
-          where: 'operation_type = ?',
-          whereArgs: ['read'],
+          where: 'operation_type = ? AND ${_ownerClause(owner)}',
+          whereArgs: ['read', ..._ownerArgs(owner)],
         );
         for (final row in rows) {
           final record = _fromRow(row);
@@ -207,8 +220,8 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
       }
       return txn.delete(
         'qr_records',
-        where: 'operation_type = ?',
-        whereArgs: ['read'],
+        where: 'operation_type = ? AND ${_ownerClause(owner)}',
+        whereArgs: ['read', ..._ownerArgs(owner)],
       );
     });
   }
@@ -266,7 +279,62 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
   }
 
   @override
-  Future<void> applyRemoteRecord(QrRecord record) async {
+  Future<List<QrRecord>> listUnownedRecords({
+    required String ownerId,
+    int limit = 1000,
+  }) async {
+    if (limit < 1) throw ArgumentError.value(limit, 'limit');
+    final normalized = ownerId.trim();
+    if (normalized.isEmpty) throw ArgumentError.value(ownerId, 'ownerId');
+    final rows = await _database.rawQuery(
+      "SELECT * FROM qr_records r WHERE r.owner_id IS NULL AND r.revision = 0 AND r.operation_type <> 'ocr' AND NOT EXISTS (SELECT 1 FROM qr_sync_outbox o WHERE o.record_id = r.id AND o.owner_id <> ?) ORDER BY r.created_at_ms DESC, r.id DESC LIMIT ?",
+      [normalized, limit],
+    );
+    return rows.map(_fromRow).toList(growable: false);
+  }
+
+  @override
+  Future<int> claimUnownedRecords(
+    String ownerId, {
+    required Set<String> recordIds,
+  }) async {
+    final normalized = ownerId.trim();
+    if (normalized.isEmpty) throw ArgumentError.value(ownerId, 'ownerId');
+    final ids = recordIds.where((id) => id.trim().isNotEmpty).toSet().toList();
+    if (ids.isEmpty) return 0;
+    return _database.transaction((txn) async {
+      var claimed = 0;
+      for (var offset = 0; offset < ids.length; offset += 500) {
+        final batch = ids.skip(offset).take(500).toList();
+        final placeholders = List.filled(batch.length, '?').join(', ');
+        claimed += await txn.rawUpdate(
+          "UPDATE qr_records SET owner_id = ? WHERE id IN ($placeholders) AND owner_id IS NULL AND revision = 0 AND operation_type <> 'ocr' AND NOT EXISTS (SELECT 1 FROM qr_sync_outbox o WHERE o.record_id = qr_records.id AND o.owner_id <> ?)",
+          [normalized, ...batch, normalized],
+        );
+      }
+      return claimed;
+    });
+  }
+
+  @override
+  Future<int> deleteAllForOwner(String ownerId) {
+    final normalized = ownerId.trim();
+    if (normalized.isEmpty) throw ArgumentError.value(ownerId, 'ownerId');
+    return _database.delete(
+      'qr_records',
+      where: 'owner_id = ?',
+      whereArgs: [normalized],
+    );
+  }
+
+  @override
+  Future<void> applyRemoteRecord(
+    QrRecord record, {
+    required String ownerId,
+  }) async {
+    final owner = ownerId.trim();
+    if (owner.isEmpty)
+      throw StateError('A sessão é necessária para aplicar dados remotos.');
     await _database.transaction((txn) async {
       final rows = await txn.query(
         'qr_records',
@@ -274,12 +342,22 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
         whereArgs: [record.id],
         limit: 1,
       );
-      if (rows.isNotEmpty && _fromRow(rows.single).revision > record.revision) {
-        return;
+      if (rows.isNotEmpty) {
+        final storedOwner = rows.single['owner_id'];
+        final existing = _fromRow(rows.single);
+        if (storedOwner != owner &&
+            (storedOwner != null ||
+                (existing.revision == 0 &&
+                    !_sameRecordPayload(existing, record)))) {
+          throw StateError(
+            'O registro remoto conflita com um registro local de outra origem.',
+          );
+        }
+        if (existing.revision > record.revision) return;
       }
       await txn.insert(
         'qr_records',
-        _toRow(record),
+        _toRow(record, ownerId: owner),
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
     });
@@ -289,7 +367,11 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
   Future<void> applyRemoteDelete(
     String recordId, {
     required int revision,
+    required String ownerId,
   }) async {
+    final owner = ownerId.trim();
+    if (owner.isEmpty)
+      throw StateError('A sessão é necessária para aplicar dados remotos.');
     await _database.transaction((txn) async {
       final rows = await txn.query(
         'qr_records',
@@ -298,24 +380,41 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
         limit: 1,
       );
       if (rows.isEmpty) return;
-      if (_fromRow(rows.single).revision <= revision) {
-        await txn.delete('qr_records', where: 'id = ?', whereArgs: [recordId]);
+      final storedOwner = rows.single['owner_id'];
+      final existing = _fromRow(rows.single);
+      if ((storedOwner == owner ||
+              (storedOwner == null && existing.revision > 0)) &&
+          existing.revision <= revision) {
+        await txn.delete(
+          'qr_records',
+          where: storedOwner == null
+              ? 'id = ? AND owner_id IS NULL'
+              : 'id = ? AND owner_id = ?',
+          whereArgs: storedOwner == null ? [recordId] : [recordId, owner],
+        );
       }
     });
   }
 
   @override
-  Future<void> setRevision(String id, int revision) async {
+  Future<void> setRevision(
+    String id,
+    int revision, {
+    required String ownerId,
+  }) async {
+    final owner = ownerId.trim();
+    if (owner.isEmpty) return;
     await _database.update(
       'qr_records',
       {'revision': revision},
-      where: 'id = ?',
-      whereArgs: [id],
+      where: 'id = ? AND owner_id = ?',
+      whereArgs: [id, owner],
     );
   }
 
-  Map<String, Object?> _toRow(QrRecord record) => {
+  Map<String, Object?> _toRow(QrRecord record, {String? ownerId}) => {
     'id': record.id,
+    'owner_id': ownerId,
     'operation_type': _operationToStorage(record.operation),
     'symbology': record.symbology,
     'content_type': record.contentType,
@@ -325,6 +424,22 @@ class SqliteQrRecordRepository implements QrRecordRepository, QrSyncLocalStore {
     'created_at_ms': record.createdAt.toUtc().millisecondsSinceEpoch,
     'revision': record.revision,
   };
+
+  String _ownerClause(String? owner) =>
+      owner == null ? 'owner_id IS NULL' : 'owner_id = ?';
+
+  List<Object?> _ownerArgs(String? owner) => owner == null ? [] : [owner];
+
+  bool _sameRecordPayload(QrRecord a, QrRecord b) =>
+      a.id == b.id &&
+      a.operation == b.operation &&
+      a.symbology == b.symbology &&
+      a.contentType == b.contentType &&
+      a.content == b.content &&
+      a.name == b.name &&
+      a.description == b.description &&
+      a.createdAt.toUtc().millisecondsSinceEpoch ==
+          b.createdAt.toUtc().millisecondsSinceEpoch;
 
   QrRecord _fromRow(Map<String, Object?> row) {
     final operation = switch (row['operation_type']) {

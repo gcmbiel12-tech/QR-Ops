@@ -40,16 +40,11 @@ class _QrOpsBootstrapState extends State<QrOpsBootstrap> {
 
   Future<void> _initializeDatabase() async {
     try {
-      final repository = await (widget.openRepository ?? () =>
-          openQrRecordRepository(syncOwnerContext: _syncOwnerContext))();
-      // Local-first Free history retention: UTC cutoff, read entries only.
-      try {
-        await repository.pruneReadHistoryBefore(
-          DateTime.now().toUtc().subtract(const Duration(days: 7)),
-        );
-      } on Object {
-        // A cleanup failure must not make existing local data inaccessible.
-      }
+      final repository =
+          await (widget.openRepository ??
+              () => openQrRecordRepository(
+                syncOwnerContext: _syncOwnerContext,
+              ))();
       QrAuthGateway? authGateway;
       QrSyncService? syncService;
       if (SupabaseAppConfig.isConfigured) {
@@ -71,6 +66,7 @@ class _QrOpsBootstrapState extends State<QrOpsBootstrap> {
               localRepository: repository,
               outbox: await openQrSyncOutbox(),
               transport: SupabaseQrSyncTransport(client),
+              ownerContext: _syncOwnerContext,
             );
           } on Object {
             // Local mode remains usable if the durable sync store cannot open.
@@ -79,10 +75,12 @@ class _QrOpsBootstrapState extends State<QrOpsBootstrap> {
           // Authentication is optional; local storage must remain available.
         }
       }
+      await _pruneHistory(repository);
       if (!mounted) return;
       _authSubscription?.cancel();
       _authSubscription = authGateway?.authStateChanges.listen((user) {
         _syncOwnerContext.update(user?.id);
+        unawaited(_pruneHistory(repository));
         if (user != null) unawaited(_trySync(user.id));
       });
       _syncTimer?.cancel();
@@ -98,9 +96,21 @@ class _QrOpsBootstrapState extends State<QrOpsBootstrap> {
         _syncService = syncService;
         _startupFailed = false;
       });
+      final currentUser = authGateway?.currentUser;
+      if (currentUser != null) unawaited(_trySync(currentUser.id));
     } on Object {
       if (!mounted) return;
       setState(() => _startupFailed = true);
+    }
+  }
+
+  Future<void> _pruneHistory(QrRecordRepository repository) async {
+    try {
+      await repository.pruneReadHistoryBefore(
+        DateTime.now().toUtc().subtract(const Duration(days: 7)),
+      );
+    } on Object {
+      // A cleanup failure must not make existing local data inaccessible.
     }
   }
 

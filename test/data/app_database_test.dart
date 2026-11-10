@@ -39,6 +39,11 @@ void main() {
         ),
         hasLength(1),
       );
+      expect(
+        (await database.rawQuery('PRAGMA table_info(qr_records)'))
+            .map((column) => column['name']),
+        contains('owner_id'),
+      );
     },
   );
 

@@ -88,13 +88,18 @@ class QrSyncMutation {
       record: record,
       baseRevision: baseRevision is num ? baseRevision.toInt() : null,
       attemptCount: attempts is num ? attempts.toInt() : 0,
-      lastError: row['last_error'] is String ? row['last_error'] as String : null,
+      lastError: row['last_error'] is String
+          ? row['last_error'] as String
+          : null,
       createdAt: DateTime.fromMillisecondsSinceEpoch(
         createdAtMs.toInt(),
         isUtc: true,
       ),
       lastAttemptAt: lastAttemptMs is num
-          ? DateTime.fromMillisecondsSinceEpoch(lastAttemptMs.toInt(), isUtc: true)
+          ? DateTime.fromMillisecondsSinceEpoch(
+              lastAttemptMs.toInt(),
+              isUtc: true,
+            )
           : null,
       isConflict: row['status'] == 'conflict',
     );
@@ -172,6 +177,7 @@ abstract interface class PersistentQrSyncOutbox implements QrSyncOutbox {
   Future<void> markConflicts(String ownerId, Set<String> idempotencyKeys);
   Future<List<QrSyncMutation>> allForOwner(String ownerId);
   Future<int> pendingCount(String ownerId);
+  Future<int> deleteAllForOwner(String ownerId);
 }
 
 abstract interface class QrSyncTransport {
@@ -194,9 +200,26 @@ abstract interface class QrSyncPullTransport implements QrSyncTransport {
 }
 
 abstract interface class QrSyncLocalStore {
-  Future<void> applyRemoteRecord(QrRecord record);
-  Future<void> applyRemoteDelete(String recordId, {required int revision});
-  Future<void> setRevision(String recordId, int revision);
+  Future<List<QrRecord>> listUnownedRecords({
+    required String ownerId,
+    int limit = 1000,
+  });
+  Future<int> claimUnownedRecords(
+    String ownerId, {
+    required Set<String> recordIds,
+  });
+  Future<int> deleteAllForOwner(String ownerId);
+  Future<void> applyRemoteRecord(QrRecord record, {required String ownerId});
+  Future<void> applyRemoteDelete(
+    String recordId, {
+    required int revision,
+    required String ownerId,
+  });
+  Future<void> setRevision(
+    String recordId,
+    int revision, {
+    required String ownerId,
+  });
 }
 
 class QrSyncReport {
@@ -228,29 +251,43 @@ class QrSyncCoordinator {
     int batchSize = 100,
   }) async {
     if (currentUserId.trim().isEmpty) {
-      throw StateError('Uma sessão autenticada é obrigatória para sincronizar.');
+      throw StateError(
+        'Uma sessão autenticada é obrigatória para sincronizar.',
+      );
     }
     if (!consentGranted) {
       throw StateError('A sincronização exige consentimento explícito.');
     }
     if (batchSize < 1 || batchSize > 100) {
-      throw ArgumentError.value(batchSize, 'batchSize', 'Use um valor entre 1 e 100.');
+      throw ArgumentError.value(
+        batchSize,
+        'batchSize',
+        'Use um valor entre 1 e 100.',
+      );
     }
 
-    final pending = await outbox.pendingForOwner(currentUserId, limit: batchSize);
+    final pending = await outbox.pendingForOwner(
+      currentUserId,
+      limit: batchSize,
+    );
     if (pending.isEmpty) {
       return const QrSyncReport(applied: 0, conflicts: 0, deferred: 0);
     }
     final keys = <String>{};
     for (final mutation in pending) {
       if (mutation.ownerId != currentUserId) {
-        throw StateError('A fila contém uma operação pertencente a outra conta.');
+        throw StateError(
+          'A fila contém uma operação pertencente a outra conta.',
+        );
       }
       if (mutation.recordId.trim().isEmpty ||
-          (mutation.type == QrSyncMutationType.upsert && mutation.record?.id != mutation.recordId) ||
+          (mutation.type == QrSyncMutationType.upsert &&
+              mutation.record?.id != mutation.recordId) ||
           mutation.idempotencyKey.trim().isEmpty ||
           !keys.add(mutation.idempotencyKey)) {
-        throw StateError('A fila contém chaves de idempotência inválidas ou duplicadas.');
+        throw StateError(
+          'A fila contém chaves de idempotência inválidas ou duplicadas.',
+        );
       }
     }
 
@@ -284,7 +321,9 @@ class QrSyncCoordinator {
     if (resultKeys.length != results.length ||
         resultKeys.length != expectedKeys.length ||
         !resultKeys.containsAll(expectedKeys)) {
-      throw StateError('Resposta de sincronização incompleta ou inconsistente.');
+      throw StateError(
+        'Resposta de sincronização incompleta ou inconsistente.',
+      );
     }
 
     final acknowledged = <String>{};
@@ -318,8 +357,15 @@ class QrSyncCoordinator {
       await outbox.acknowledge(currentUserId, acknowledged);
     }
     if (conflicted.isNotEmpty && outbox is PersistentQrSyncOutbox) {
-      await (outbox as PersistentQrSyncOutbox).markConflicts(currentUserId, conflicted);
+      await (outbox as PersistentQrSyncOutbox).markConflicts(
+        currentUserId,
+        conflicted,
+      );
     }
-    return QrSyncReport(applied: applied, conflicts: conflicts, deferred: deferred);
+    return QrSyncReport(
+      applied: applied,
+      conflicts: conflicts,
+      deferred: deferred,
+    );
   }
 }

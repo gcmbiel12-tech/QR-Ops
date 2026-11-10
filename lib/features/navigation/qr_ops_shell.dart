@@ -29,11 +29,15 @@ class QrOpsShell extends StatefulWidget {
     required this.repository,
     this.authGateway,
     this.syncService,
+    this.themeMode = ThemeMode.light,
+    this.onThemeModeChanged,
   });
 
   final QrRecordRepository repository;
   final QrAuthGateway? authGateway;
   final QrSyncService? syncService;
+  final ThemeMode themeMode;
+  final ValueChanged<ThemeMode>? onThemeModeChanged;
 
   @override
   State<QrOpsShell> createState() => _QrOpsShellState();
@@ -89,6 +93,8 @@ class _QrOpsShellState extends State<QrOpsShell> {
           auth: widget.authGateway,
           syncService: widget.syncService,
           repository: widget.repository,
+          themeMode: widget.themeMode,
+          onThemeModeChanged: widget.onThemeModeChanged,
         ),
       ),
     );

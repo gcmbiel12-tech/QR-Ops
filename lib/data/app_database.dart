@@ -6,7 +6,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart' as sqlite_ffi;
 class AppDatabase {
   AppDatabase({required this.factory, required this.path});
 
-  static const schemaVersion = 5;
+  static const schemaVersion = 6;
 
   // ASCII "QROP", used by SQLite to identify a database owned by QR Ops.
   static const applicationId = 0x51524F50;
@@ -141,6 +141,13 @@ class AppDatabase {
           await database.execute('DROP TABLE qr_records_v4');
           await database.execute(
             'CREATE INDEX qr_records_created_at_idx ON qr_records (created_at_ms DESC, id DESC)',
+          );
+        case 6:
+          await database.execute(
+            'ALTER TABLE qr_records ADD COLUMN owner_id TEXT',
+          );
+          await database.execute(
+            'CREATE INDEX qr_records_owner_created_idx ON qr_records (owner_id, created_at_ms DESC, id DESC)',
           );
         default:
           throw StateError('Missing SQLite migration for version $version.');

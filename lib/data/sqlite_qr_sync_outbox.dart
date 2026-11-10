@@ -121,6 +121,13 @@ class SqliteQrSyncOutbox implements PersistentQrSyncOutbox {
     return (rows.single['count'] as num).toInt();
   }
 
+  @override
+  Future<int> deleteAllForOwner(String ownerId) => database.delete(
+    'qr_sync_outbox',
+    where: 'owner_id = ?',
+    whereArgs: [ownerId],
+  );
+
   bool _sameMutation(QrSyncMutation a, QrSyncMutation b) {
     return a.ownerId == b.ownerId &&
         a.recordId == b.recordId &&

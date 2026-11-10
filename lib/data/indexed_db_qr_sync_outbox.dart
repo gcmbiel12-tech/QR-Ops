@@ -11,8 +11,8 @@ class IndexedDbQrSyncOutbox implements PersistentQrSyncOutbox {
   });
 
   // Keep this aligned with IndexedDbQrRecordRepository so opening the
-  // outbox never attempts to downgrade a database already upgraded to v3.
-  static const _databaseVersion = 3;
+  // outbox never attempts to downgrade a database already upgraded to v4.
+  static const _databaseVersion = 4;
   static const _storeName = 'qr_sync_outbox';
 
   final IdbFactory factory;
@@ -222,6 +222,32 @@ class IndexedDbQrSyncOutbox implements PersistentQrSyncOutbox {
         final row = Map<Object?, Object?>.from(value as Map);
         return row['owner_id'] == ownerId && row['status'] == 'pending';
       }).length;
+    } on Object {
+      await _finishAfterFailure(transaction);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<int> deleteAllForOwner(String ownerId) async {
+    final database = await _openDatabase();
+    final transaction = database.transaction(_storeName, idbModeReadWrite);
+    final store = transaction.objectStore(_storeName);
+    var deleted = 0;
+    try {
+      final rows = await store.getAll();
+      for (final value in rows) {
+        if (value is! Map) continue;
+        final row = Map<Object?, Object?>.from(value);
+        if (row['owner_id'] != ownerId) continue;
+        final key = row['idempotency_key'];
+        if (key is String) {
+          await store.delete(_storageKey(ownerId, key));
+          deleted++;
+        }
+      }
+      await transaction.completed;
+      return deleted;
     } on Object {
       await _finishAfterFailure(transaction);
       rethrow;

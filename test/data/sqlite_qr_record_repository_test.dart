@@ -98,7 +98,10 @@ void main() {
         final inserted = await fileRepository.insert(
           QrRecord.created(content: 'persistir entre conexões'),
         );
-        expect(await SqliteQrSyncOutbox(fileDatabase).pendingCount('user-a'), 1);
+        expect(
+          await SqliteQrSyncOutbox(fileDatabase).pendingCount('user-a'),
+          1,
+        );
 
         final firstConnection = fileDatabase;
         await firstConnection.close();
@@ -108,11 +111,17 @@ void main() {
           path: path,
         ).open();
 
-        final restored = await SqliteQrRecordRepository(fileDatabase)
-            .findById(inserted.id);
+        final restoredOwner = SyncOwnerContext()..update('user-a');
+        final restored = await SqliteQrRecordRepository(
+          fileDatabase,
+          syncOwnerContext: restoredOwner,
+        ).findById(inserted.id);
         expect(restored?.id, inserted.id);
         expect(restored?.content, 'persistir entre conexões');
-        expect(await SqliteQrSyncOutbox(fileDatabase).pendingCount('user-a'), 1);
+        expect(
+          await SqliteQrSyncOutbox(fileDatabase).pendingCount('user-a'),
+          1,
+        );
       } finally {
         await fileDatabase?.close();
       }
@@ -186,44 +195,165 @@ void main() {
     },
   );
 
-  test('persists owner-scoped sync operations atomically with local mutations', () async {
-    final owner = SyncOwnerContext()..update('user-a');
-    repository = SqliteQrRecordRepository(database, syncOwnerContext: owner);
-    final outbox = SqliteQrSyncOutbox(database);
-    final record = await repository.insert(QrRecord.created(content: 'queued create'));
-    final updated = QrRecord(
-      id: record.id,
-      operation: record.operation,
-      symbology: record.symbology,
-      contentType: record.contentType,
-      content: record.content,
-      name: 'updated metadata',
-      createdAt: record.createdAt,
-      revision: record.revision,
+  test(
+    'persists owner-scoped sync operations atomically with local mutations',
+    () async {
+      final owner = SyncOwnerContext()..update('user-a');
+      repository = SqliteQrRecordRepository(database, syncOwnerContext: owner);
+      final outbox = SqliteQrSyncOutbox(database);
+      final record = await repository.insert(
+        QrRecord.created(content: 'queued create'),
+      );
+      final updated = QrRecord(
+        id: record.id,
+        operation: record.operation,
+        symbology: record.symbology,
+        contentType: record.contentType,
+        content: record.content,
+        name: 'updated metadata',
+        createdAt: record.createdAt,
+        revision: record.revision,
+      );
+      await repository.updateById(updated);
+      await repository.deleteById(record.id);
+
+      final pending = await outbox.pendingForOwner('user-a', limit: 100);
+      expect(pending, hasLength(3));
+      expect(pending.map((item) => item.type), [
+        QrSyncMutationType.upsert,
+        QrSyncMutationType.upsert,
+        QrSyncMutationType.delete,
+      ]);
+      expect(pending.map((item) => item.baseRevision), [null, 1, 2]);
+      expect(await outbox.pendingForOwner('user-b'), isEmpty);
+
+      final reopenedOutbox = SqliteQrSyncOutbox(database);
+      expect(await reopenedOutbox.pendingForOwner('user-a'), hasLength(3));
+      expect(await reopenedOutbox.pendingCount('user-a'), 3);
+    },
+  );
+
+  test('isolates local records by account and only claims legacy data after consent', () async {
+    final legacy = await repository.insert(
+      QrRecord.created(content: 'legacy local record'),
     );
-    await repository.updateById(updated);
-    await repository.deleteById(record.id);
+    final unselectedLegacy = await repository.insert(
+      QrRecord.created(content: 'legacy record not selected'),
+    );
+    final ownerA = SyncOwnerContext()..update('user-a');
+    final accountA = SqliteQrRecordRepository(
+      database,
+      syncOwnerContext: ownerA,
+    );
 
-    final pending = await outbox.pendingForOwner('user-a', limit: 100);
-    expect(pending, hasLength(3));
-    expect(pending.map((item) => item.type), [
-      QrSyncMutationType.upsert,
-      QrSyncMutationType.upsert,
-      QrSyncMutationType.delete,
+    expect(await accountA.listLatest(), isEmpty);
+    expect(
+      (await accountA.listUnownedRecords(ownerId: 'user-a'))
+          .map((item) => item.id),
+      containsAll([legacy.id, unselectedLegacy.id]),
+    );
+    expect(
+      await accountA.claimUnownedRecords('user-a', recordIds: {legacy.id}),
+      1,
+    );
+    expect((await accountA.listLatest()).map((item) => item.id), [legacy.id]);
+    expect(
+      (await accountA.listUnownedRecords(ownerId: 'user-a'))
+          .map((item) => item.id),
+      [unselectedLegacy.id],
+    );
+
+    final recordA = await accountA.insert(
+      QrRecord.created(content: 'private A'),
+    );
+    final ownerB = SyncOwnerContext()..update('user-b');
+    final accountB = SqliteQrRecordRepository(
+      database,
+      syncOwnerContext: ownerB,
+    );
+    expect(await accountB.listLatest(), isEmpty);
+    expect(await accountB.findById(recordA.id), isNull);
+    expect(await accountB.deleteById(recordA.id), isFalse);
+
+    final recordB = await accountB.insert(
+      QrRecord.created(content: 'private B'),
+    );
+    expect(
+      (await accountA.listLatest()).map((item) => item.content),
+      contains('private A'),
+    );
+    expect(
+      (await accountA.listLatest()).map((item) => item.content),
+      isNot(contains('private B')),
+    );
+    expect((await accountB.listLatest()).map((item) => item.content), [
+      'private B',
     ]);
-    expect(pending.map((item) => item.baseRevision), [null, 1, 2]);
-    expect(await outbox.pendingForOwner('user-b'), isEmpty);
-
-    final reopenedOutbox = SqliteQrSyncOutbox(database);
-    expect(await reopenedOutbox.pendingForOwner('user-a'), hasLength(3));
-    expect(await reopenedOutbox.pendingCount('user-a'), 3);
+    expect(await accountA.findById(recordB.id), isNull);
   });
 
-  test('does not queue local operations without an authenticated owner', () async {
-    final record = await repository.insert(QrRecord.created(content: 'local only'));
-    expect(await repository.findById(record.id), isNotNull);
-    expect(await SqliteQrSyncOutbox(database).pendingCount('user-a'), 0);
+  test('adopts a matching legacy record when it is confirmed by the account remote snapshot', () async {
+    final legacy = await repository.insert(
+      QrRecord.created(content: 'previously synced record', name: 'Legacy'),
+    );
+    final owner = SyncOwnerContext()..update('user-a');
+    final account = SqliteQrRecordRepository(database, syncOwnerContext: owner);
+    final remote = legacy.withRevision(3);
+
+    await account.applyRemoteRecord(remote, ownerId: 'user-a');
+
+    expect(await repository.findById(legacy.id), isNull);
+    expect((await account.findById(legacy.id))?.revision, 3);
+    expect((await account.findById(legacy.id))?.content, legacy.content);
   });
+
+  test('does not let another account claim legacy rows queued for the first account', () async {
+    final ownerA = SyncOwnerContext()..update('user-a');
+    final accountA = SqliteQrRecordRepository(
+      database,
+      syncOwnerContext: ownerA,
+    );
+    final record = await accountA.insert(
+      QrRecord.created(content: 'queued for A'),
+    );
+    await database.update(
+      'qr_records',
+      {'owner_id': null},
+      where: 'id = ?',
+      whereArgs: [record.id],
+    );
+
+    final ownerB = SyncOwnerContext()..update('user-b');
+    final accountB = SqliteQrRecordRepository(
+      database,
+      syncOwnerContext: ownerB,
+    );
+    expect(await accountB.listUnownedRecords(ownerId: 'user-b'), isEmpty);
+    expect(
+      await accountB.claimUnownedRecords('user-b', recordIds: {record.id}),
+      0,
+    );
+    expect(
+      (await accountA.listUnownedRecords(ownerId: 'user-a')).single.id,
+      record.id,
+    );
+    expect(
+      await accountA.claimUnownedRecords('user-a', recordIds: {record.id}),
+      1,
+    );
+    expect((await accountA.listLatest()).single.id, record.id);
+  });
+
+  test(
+    'does not queue local operations without an authenticated owner',
+    () async {
+      final record = await repository.insert(
+        QrRecord.created(content: 'local only'),
+      );
+      expect(await repository.findById(record.id), isNotNull);
+      expect(await SqliteQrSyncOutbox(database).pendingCount('user-a'), 0);
+    },
+  );
 
   test('rejects invalid repository operations', () async {
     final persisted = await repository.insert(

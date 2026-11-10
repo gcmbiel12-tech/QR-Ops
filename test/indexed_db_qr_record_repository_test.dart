@@ -158,8 +158,13 @@ void main() {
       databaseName: databaseName,
       syncOwnerContext: owner,
     );
-    final outbox = IndexedDbQrSyncOutbox(factory: idbFactoryBrowser, databaseName: databaseName);
-    final record = await repository.insert(QrRecord.created(content: 'queued create'));
+    final outbox = IndexedDbQrSyncOutbox(
+      factory: idbFactoryBrowser,
+      databaseName: databaseName,
+    );
+    final record = await repository.insert(
+      QrRecord.created(content: 'queued create'),
+    );
     final updated = QrRecord(
       id: record.id,
       operation: record.operation,
@@ -188,9 +193,141 @@ void main() {
       factory: idbFactoryBrowser,
       databaseName: databaseName,
     );
-    final reopenedOutbox = IndexedDbQrSyncOutbox(factory: idbFactoryBrowser, databaseName: databaseName);
+    final reopenedOutbox = IndexedDbQrSyncOutbox(
+      factory: idbFactoryBrowser,
+      databaseName: databaseName,
+    );
     expect(await reopenedOutbox.pendingForOwner('user-a'), hasLength(3));
     await reopenedOutbox.close();
+  });
+
+  test('isolates account records and preserves unowned legacy records until claimed', () async {
+    final legacy = await repository.insert(
+      QrRecord.created(content: 'legacy local record'),
+    );
+    final unselectedLegacy = await repository.insert(
+      QrRecord.created(content: 'legacy record not selected'),
+    );
+    final ownerA = SyncOwnerContext()..update('user-a');
+    final accountA = IndexedDbQrRecordRepository(
+      factory: idbFactoryBrowser,
+      databaseName: databaseName,
+      syncOwnerContext: ownerA,
+    );
+    expect(await accountA.listLatest(), isEmpty);
+    expect(
+      (await accountA.listUnownedRecords(ownerId: 'user-a'))
+          .map((item) => item.id),
+      containsAll([legacy.id, unselectedLegacy.id]),
+    );
+    expect(
+      await accountA.claimUnownedRecords('user-a', recordIds: {legacy.id}),
+      1,
+    );
+    expect((await accountA.listLatest()).map((item) => item.id), [legacy.id]);
+    expect(
+      (await accountA.listUnownedRecords(ownerId: 'user-a'))
+          .map((item) => item.id),
+      [unselectedLegacy.id],
+    );
+
+    final recordA = await accountA.insert(
+      QrRecord.created(content: 'private A'),
+    );
+    final ownerB = SyncOwnerContext()..update('user-b');
+    final accountB = IndexedDbQrRecordRepository(
+      factory: idbFactoryBrowser,
+      databaseName: databaseName,
+      syncOwnerContext: ownerB,
+    );
+    expect(await accountB.listLatest(), isEmpty);
+    expect(await accountB.findById(recordA.id), isNull);
+    expect(await accountB.deleteById(recordA.id), isFalse);
+    await accountB.insert(QrRecord.created(content: 'private B'));
+    expect(
+      (await accountA.listLatest()).map((item) => item.content),
+      contains('private A'),
+    );
+    expect(
+      (await accountA.listLatest()).map((item) => item.content),
+      isNot(contains('private B')),
+    );
+    expect((await accountB.listLatest()).map((item) => item.content), [
+      'private B',
+    ]);
+    await accountA.close();
+    await accountB.close();
+  });
+
+  test('adopts a matching legacy record when confirmed by the account remote snapshot', () async {
+    final legacy = await repository.insert(
+      QrRecord.created(content: 'previously synced record', name: 'Legacy'),
+    );
+    final owner = SyncOwnerContext()..update('user-a');
+    final account = IndexedDbQrRecordRepository(
+      factory: idbFactoryBrowser,
+      databaseName: databaseName,
+      syncOwnerContext: owner,
+    );
+    final remote = legacy.withRevision(3);
+
+    await account.applyRemoteRecord(remote, ownerId: 'user-a');
+
+    expect(await repository.findById(legacy.id), isNull);
+    expect((await account.findById(legacy.id))?.revision, 3);
+    expect((await account.findById(legacy.id))?.content, legacy.content);
+    await account.close();
+  });
+
+  test('does not let another account claim a legacy row queued for the first account', () async {
+    final ownerA = SyncOwnerContext()..update('user-a');
+    final accountA = IndexedDbQrRecordRepository(
+      factory: idbFactoryBrowser,
+      databaseName: databaseName,
+      syncOwnerContext: ownerA,
+    );
+    final record = await accountA.insert(
+      QrRecord.created(content: 'queued for A'),
+    );
+    await accountA.close();
+    final raw = await idbFactoryBrowser.open(databaseName);
+    final transaction = raw.transaction('qr_records', idbModeReadWrite);
+    final store = transaction.objectStore('qr_records');
+    final row = Map<Object?, Object?>.from(
+      (await store.getObject(record.id)) as Map,
+    )..['owner_id'] = null;
+    await store.put(row);
+    await transaction.completed;
+    raw.close();
+
+    final ownerB = SyncOwnerContext()..update('user-b');
+    final accountB = IndexedDbQrRecordRepository(
+      factory: idbFactoryBrowser,
+      databaseName: databaseName,
+      syncOwnerContext: ownerB,
+    );
+    expect(await accountB.listUnownedRecords(ownerId: 'user-b'), isEmpty);
+    expect(
+      await accountB.claimUnownedRecords('user-b', recordIds: {record.id}),
+      0,
+    );
+    await accountB.close();
+
+    final restoredA = IndexedDbQrRecordRepository(
+      factory: idbFactoryBrowser,
+      databaseName: databaseName,
+      syncOwnerContext: ownerA,
+    );
+    expect(
+      (await restoredA.listUnownedRecords(ownerId: 'user-a')).single.id,
+      record.id,
+    );
+    expect(
+      await restoredA.claimUnownedRecords('user-a', recordIds: {record.id}),
+      1,
+    );
+    expect((await restoredA.listLatest()).single.id, record.id);
+    await restoredA.close();
   });
 
   test('propagates IndexedDB open failures to the caller', () async {

@@ -17,7 +17,7 @@ class IndexedDbQrRecordRepository
   });
 
   static const defaultDatabaseName = 'qr_ops_history';
-  static const _databaseVersion = 3;
+  static const _databaseVersion = 4;
   static const _storeName = 'qr_records';
   static const _outboxStoreName = 'qr_sync_outbox';
 
@@ -61,14 +61,16 @@ class IndexedDbQrRecordRepository
     if (record.content.trim().isEmpty) {
       throw ArgumentError.value(record.content, 'record.content');
     }
+    final owner = syncOwnerContext?.userId;
     final database = await _openDatabase();
     final transaction = database.transaction([
       _storeName,
       _outboxStoreName,
     ], idbModeReadWrite);
     try {
-      await transaction.objectStore(_storeName).add(_toRow(record));
-      final owner = syncOwnerContext?.userId;
+      await transaction
+          .objectStore(_storeName)
+          .add(_toRow(record, ownerId: owner));
       if (owner != null && record.operation != QrRecordOperation.ocr) {
         final base = await _nextBaseRevision(
           transaction,
@@ -100,13 +102,18 @@ class IndexedDbQrRecordRepository
     final database = await _openDatabase();
     final transaction = database.transaction(_storeName, idbModeReadOnly);
     try {
+      final owner = syncOwnerContext?.userId;
       final rows = await transaction.objectStore(_storeName).getAll();
       await transaction.completed;
-      final records = rows.map(_fromRow).toList(growable: false)
-        ..sort((a, b) {
-          final byDate = b.createdAt.compareTo(a.createdAt);
-          return byDate == 0 ? b.id.compareTo(a.id) : byDate;
-        });
+      final records =
+          rows
+              .where((row) => _belongsToOwner(row, owner))
+              .map(_fromRow)
+              .toList(growable: false)
+            ..sort((a, b) {
+              final byDate = b.createdAt.compareTo(a.createdAt);
+              return byDate == 0 ? b.id.compareTo(a.id) : byDate;
+            });
       return List.unmodifiable(records.take(limit));
     } on Object {
       await _finishAfterFailure(transaction);
@@ -119,9 +126,10 @@ class IndexedDbQrRecordRepository
     final database = await _openDatabase();
     final transaction = database.transaction(_storeName, idbModeReadOnly);
     try {
+      final owner = syncOwnerContext?.userId;
       final row = await transaction.objectStore(_storeName).getObject(id);
       await transaction.completed;
-      return row == null ? null : _fromRow(row);
+      return row == null || !_belongsToOwner(row, owner) ? null : _fromRow(row);
     } on Object {
       await _finishAfterFailure(transaction);
       rethrow;
@@ -136,14 +144,14 @@ class IndexedDbQrRecordRepository
       _outboxStoreName,
     ], idbModeReadWrite);
     final records = transaction.objectStore(_storeName);
+    final owner = syncOwnerContext?.userId;
     try {
       final existing = await records.getObject(id);
-      if (existing == null) {
+      if (existing == null || !_belongsToOwner(existing, owner)) {
         await transaction.completed;
         return false;
       }
       final record = _fromRow(existing);
-      final owner = syncOwnerContext?.userId;
       if (owner != null && record.operation != QrRecordOperation.ocr) {
         final base = await _nextBaseRevision(
           transaction,
@@ -177,16 +185,16 @@ class IndexedDbQrRecordRepository
       _outboxStoreName,
     ], idbModeReadWrite);
     final store = transaction.objectStore(_storeName);
+    final owner = syncOwnerContext?.userId;
     try {
       final existing = await store.getObject(record.id);
-      if (existing == null) {
+      if (existing == null || !_belongsToOwner(existing, owner)) {
         await transaction.completed;
         return false;
       }
       final old = _fromRow(existing);
       final preserved = record.withRevision(old.revision);
-      await store.put(_toRow(preserved));
-      final owner = syncOwnerContext?.userId;
+      await store.put(_toRow(preserved, ownerId: owner));
       if (owner != null && preserved.operation != QrRecordOperation.ocr) {
         final base = await _nextBaseRevision(
           transaction,
@@ -225,7 +233,8 @@ class IndexedDbQrRecordRepository
       final owner = syncOwnerContext?.userId;
       for (final value in rows) {
         final row = Map<Object?, Object?>.from(value as Map);
-        if (row['operation_type'] == 'read' &&
+        if (_belongsToOwner(row, owner) &&
+            row['operation_type'] == 'read' &&
             row['created_at_ms'] is num &&
             (row['created_at_ms'] as num) < cutoffMs) {
           final record = _fromRow(row);
@@ -270,7 +279,7 @@ class IndexedDbQrRecordRepository
       final owner = syncOwnerContext?.userId;
       for (final value in rows) {
         final row = Map<Object?, Object?>.from(value as Map);
-        if (row['operation_type'] == 'read') {
+        if (_belongsToOwner(row, owner) && row['operation_type'] == 'read') {
           final record = _fromRow(row);
           if (owner != null) {
             final base = await _nextBaseRevision(
@@ -366,17 +375,146 @@ class IndexedDbQrRecordRepository
   }
 
   @override
-  Future<void> applyRemoteRecord(QrRecord record) async {
+  Future<List<QrRecord>> listUnownedRecords({
+    required String ownerId,
+    int limit = 1000,
+  }) async {
+    if (limit < 1) throw ArgumentError.value(limit, 'limit');
+    final normalized = ownerId.trim();
+    if (normalized.isEmpty) throw ArgumentError.value(ownerId, 'ownerId');
+    final database = await _openDatabase();
+    final transaction = database.transaction([
+      _storeName,
+      _outboxStoreName,
+    ], idbModeReadOnly);
+    try {
+      final rows = await transaction.objectStore(_storeName).getAll();
+      final outboxRows = await transaction
+          .objectStore(_outboxStoreName)
+          .getAll();
+      await transaction.completed;
+      final blockedIds = _recordIdsOwnedByOther(outboxRows, normalized);
+      final records =
+          rows
+              .where((value) {
+                if (!_belongsToOwner(value, null) ||
+                    blockedIds.contains(_rowId(value))) {
+                  return false;
+                }
+                final row = Map<Object?, Object?>.from(value as Map);
+                return ((row['revision'] as num?)?.toInt() ?? 0) == 0 &&
+                    row['operation_type'] != 'ocr';
+              })
+              .map(_fromRow)
+              .toList(growable: false)
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return List.unmodifiable(records.take(limit));
+    } on Object {
+      await _finishAfterFailure(transaction);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<int> claimUnownedRecords(
+    String ownerId, {
+    required Set<String> recordIds,
+  }) async {
+    final normalized = ownerId.trim();
+    if (normalized.isEmpty) throw ArgumentError.value(ownerId, 'ownerId');
+    final allowedIds = recordIds.where((id) => id.trim().isNotEmpty).toSet();
+    if (allowedIds.isEmpty) return 0;
+    final database = await _openDatabase();
+    final transaction = database.transaction([
+      _storeName,
+      _outboxStoreName,
+    ], idbModeReadWrite);
+    final store = transaction.objectStore(_storeName);
+    var claimed = 0;
+    try {
+      final rows = await store.getAll();
+      final outboxRows = await transaction
+          .objectStore(_outboxStoreName)
+          .getAll();
+      final blockedIds = _recordIdsOwnedByOther(outboxRows, normalized);
+      for (final value in rows) {
+        final id = _rowId(value);
+        if (!_belongsToOwner(value, null) ||
+            id == null ||
+            !allowedIds.contains(id) ||
+            blockedIds.contains(id)) {
+          continue;
+        }
+        final row = Map<Object?, Object?>.from(value as Map);
+        if (((row['revision'] as num?)?.toInt() ?? 0) != 0 ||
+            row['operation_type'] == 'ocr') {
+          continue;
+        }
+        row['owner_id'] = normalized;
+        await store.put(row);
+        claimed++;
+      }
+      await transaction.completed;
+      return claimed;
+    } on Object {
+      await _finishAfterFailure(transaction);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<int> deleteAllForOwner(String ownerId) async {
+    final normalized = ownerId.trim();
+    if (normalized.isEmpty) throw ArgumentError.value(ownerId, 'ownerId');
+    final database = await _openDatabase();
+    final transaction = database.transaction(_storeName, idbModeReadWrite);
+    final store = transaction.objectStore(_storeName);
+    var deleted = 0;
+    try {
+      final rows = await store.getAll();
+      for (final value in rows) {
+        if (!_belongsToOwner(value, normalized)) continue;
+        final id = _rowId(value);
+        if (id == null) continue;
+        await store.delete(id);
+        deleted++;
+      }
+      await transaction.completed;
+      return deleted;
+    } on Object {
+      await _finishAfterFailure(transaction);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> applyRemoteRecord(
+    QrRecord record, {
+    required String ownerId,
+  }) async {
     final database = await _openDatabase();
     final transaction = database.transaction(_storeName, idbModeReadWrite);
     final store = transaction.objectStore(_storeName);
     try {
+      final owner = ownerId.trim();
+      if (owner.isEmpty)
+        throw StateError('A sessão é necessária para aplicar dados remotos.');
       final existing = await store.getObject(record.id);
+      if (existing != null && !_belongsToOwner(existing, owner)) {
+        final row = Map<Object?, Object?>.from(existing as Map);
+        final local = _fromRow(existing);
+        if (row['owner_id'] != null ||
+            (local.revision == 0 && !_sameRecordPayload(local, record))) {
+          throw StateError(
+            'O registro remoto conflita com um registro local de outra origem.',
+          );
+        }
+      }
       if (existing != null && _fromRow(existing).revision > record.revision) {
         await transaction.completed;
         return;
       }
-      await store.put(_toRow(record));
+      await store.put(_toRow(record, ownerId: owner));
       await transaction.completed;
     } on Object {
       await _finishAfterFailure(transaction);
@@ -388,14 +526,24 @@ class IndexedDbQrRecordRepository
   Future<void> applyRemoteDelete(
     String recordId, {
     required int revision,
+    required String ownerId,
   }) async {
     final database = await _openDatabase();
     final transaction = database.transaction(_storeName, idbModeReadWrite);
     final store = transaction.objectStore(_storeName);
     try {
+      final owner = ownerId.trim();
+      if (owner.isEmpty)
+        throw StateError('A sessão é necessária para aplicar dados remotos.');
       final existing = await store.getObject(recordId);
-      if (existing != null && _fromRow(existing).revision <= revision) {
-        await store.delete(recordId);
+      if (existing != null) {
+        final row = Map<Object?, Object?>.from(existing as Map);
+        final local = _fromRow(existing);
+        if ((_belongsToOwner(existing, owner) ||
+                (row['owner_id'] == null && local.revision > 0)) &&
+            local.revision <= revision) {
+          await store.delete(recordId);
+        }
       }
       await transaction.completed;
     } on Object {
@@ -405,13 +553,20 @@ class IndexedDbQrRecordRepository
   }
 
   @override
-  Future<void> setRevision(String id, int revision) async {
+  Future<void> setRevision(
+    String id,
+    int revision, {
+    required String ownerId,
+  }) async {
     final database = await _openDatabase();
     final transaction = database.transaction(_storeName, idbModeReadWrite);
     final store = transaction.objectStore(_storeName);
     try {
+      final owner = ownerId.trim();
       final existing = await store.getObject(id);
-      if (existing != null) {
+      if (existing != null &&
+          owner.isNotEmpty &&
+          _belongsToOwner(existing, owner)) {
         final row = Map<Object?, Object?>.from(existing as Map)
           ..['revision'] = revision;
         await store.put(row);
@@ -443,8 +598,9 @@ class IndexedDbQrRecordRepository
     }
   }
 
-  Map<String, Object> _toRow(QrRecord record) => {
+  Map<String, Object?> _toRow(QrRecord record, {String? ownerId}) => {
     'id': record.id,
+    'owner_id': ownerId,
     'operation_type': switch (record.operation) {
       QrRecordOperation.create => 'create',
       QrRecordOperation.read => 'read',
@@ -458,6 +614,42 @@ class IndexedDbQrRecordRepository
     'created_at_ms': record.createdAt.toUtc().millisecondsSinceEpoch,
     'revision': record.revision,
   };
+
+  Set<String> _recordIdsOwnedByOther(List<Object> rows, String ownerId) {
+    final blocked = <String>{};
+    for (final value in rows) {
+      if (value is! Map) continue;
+      final row = Map<Object?, Object?>.from(value);
+      final recordId = row['record_id'];
+      if (row['owner_id'] != ownerId && recordId is String) {
+        blocked.add(recordId);
+      }
+    }
+    return blocked;
+  }
+
+  String? _rowId(Object value) {
+    if (value is! Map) return null;
+    final id = Map<Object?, Object?>.from(value)['id'];
+    return id is String ? id : null;
+  }
+
+  bool _sameRecordPayload(QrRecord a, QrRecord b) =>
+      a.id == b.id &&
+      a.operation == b.operation &&
+      a.symbology == b.symbology &&
+      a.contentType == b.contentType &&
+      a.content == b.content &&
+      a.name == b.name &&
+      a.description == b.description &&
+      a.createdAt.toUtc().millisecondsSinceEpoch ==
+          b.createdAt.toUtc().millisecondsSinceEpoch;
+
+  bool _belongsToOwner(Object value, String? owner) {
+    if (value is! Map) return false;
+    final row = Map<Object?, Object?>.from(value);
+    return row['owner_id'] == owner;
+  }
 
   QrRecord _fromRow(Object value) {
     if (value is! Map) {
