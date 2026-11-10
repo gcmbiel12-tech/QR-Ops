@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   const tesseractUrl = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
   let loadPromise;
 
@@ -27,10 +27,12 @@
   }
 
   function createOcrVariants(image) {
-    const maxDimension = Math.max(image.naturalWidth, image.naturalHeight);
+    const sourceWidth = image.naturalWidth || image.width;
+    const sourceHeight = image.naturalHeight || image.height;
+    const maxDimension = Math.max(sourceWidth, sourceHeight);
     const scale = Math.min(2, 2600 / maxDimension);
-    const width = Math.max(1, Math.round(image.naturalWidth * scale));
-    const height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const width = Math.max(1, Math.round(sourceWidth * scale));
+    const height = Math.max(1, Math.round(sourceHeight * scale));
 
     const original = document.createElement('canvas');
     original.width = width;
@@ -169,18 +171,14 @@
     return confidence + completenessBonus;
   }
 
-  window.qrOpsRecognizeImage = async function (imageDataUrl) {
-    const tesseract = await loadTesseract();
-    const image = await loadImageForOcr(imageDataUrl);
-    let variants = [];
-    let worker;
+  window.qrOpsOcrWarnings = [];
+
+  async function recognizeBestVariant(worker, source) {
+    const variants = createOcrVariants(source);
     let bestText = '';
     let bestScore = -1;
-
+    let bestWarnings = [];
     try {
-      variants = createOcrVariants(image);
-      worker = await tesseract.createWorker('por');
-
       for (const variant of variants) {
         await worker.setParameters({
           tessedit_pageseg_mode: variant.pageSegmentation,
@@ -192,19 +190,67 @@
         if (score > bestScore) {
           bestScore = score;
           bestText = result.data.text || '';
+          bestWarnings = (result.data.words || [])
+            .filter(word => word.text && Number.isFinite(word.confidence) && word.confidence < 65)
+            .map(word => word.text.trim())
+            .filter(Boolean);
         }
       }
+      window.qrOpsOcrWarnings = [
+        ...new Set([...(window.qrOpsOcrWarnings || []), ...bestWarnings])
+      ].slice(0, 20);
       return bestText;
     } finally {
-      try {
-        if (worker) await worker.terminate();
-      } finally {
-        for (const canvas of new Set(variants.map(variant => variant.canvas))) {
-          canvas.width = 0;
-          canvas.height = 0;
-        }
-        image.src = '';
+      for (const canvas of new Set(variants.map(variant => variant.canvas))) {
+        canvas.width = 0;
+        canvas.height = 0;
       }
+    }
+  }
+
+  window.qrOpsGetOcrWarnings = function () {
+    return JSON.stringify(window.qrOpsOcrWarnings || []);
+  };
+
+  function extractPdfTextLayout(items) {
+    const lines = [];
+    let current = [];
+    let lastY = null;
+
+    const flush = () => {
+      const line = current.join(' ').replace(/\s+/g, ' ').trim();
+      if (line) lines.push(line);
+      current = [];
+      lastY = null;
+    };
+
+    for (const item of items || []) {
+      const value = (item.str || '').trim();
+      if (!value) continue;
+      const y = Array.isArray(item.transform) ? item.transform[5] : null;
+      if (current.length && y !== null && lastY !== null && Math.abs(y - lastY) > 2.5) {
+        flush();
+      }
+      current.push(value);
+      if (y !== null) lastY = y;
+      if (item.hasEOL) flush();
+    }
+    flush();
+    return lines.join('\n').trim();
+  }
+
+  window.qrOpsRecognizeImage = async function (imageDataUrl) {
+    const tesseract = await loadTesseract();
+    const image = await loadImageForOcr(imageDataUrl);
+    window.qrOpsOcrWarnings = [];
+    let worker;
+
+    try {
+      worker = await tesseract.createWorker('por');
+      return await recognizeBestVariant(worker, image);
+    } finally {
+      if (worker) await worker.terminate();
+      image.src = '';
     }
   };
 
@@ -237,12 +283,13 @@
     const pdf = await pdfjs.getDocument({ data }).promise;
     if (pdf.numPages > 100) throw new Error('O PDF tem mais de 100 páginas. Divida o arquivo em lotes menores.');
     const results = [];
+    window.qrOpsOcrWarnings = [];
     let worker;
     try {
       for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
         const page = await pdf.getPage(pageNumber);
         const textContent = await page.getTextContent();
-        const embeddedText = textContent.items.map(item => item.str || '').filter(Boolean).join(' ').trim();
+        const embeddedText = extractPdfTextLayout(textContent.items);
         let text = embeddedText;
         if (!text) {
           if (!worker) {
@@ -255,10 +302,12 @@
           canvas.height = Math.ceil(viewport.height);
           const context = canvas.getContext('2d', { willReadFrequently: true });
           await page.render({ canvasContext: context, viewport }).promise;
-          const recognized = await worker.recognize(canvas.toDataURL('image/png'));
-          text = (recognized.data.text || '').trim();
-          canvas.width = 0;
-          canvas.height = 0;
+          try {
+            text = (await recognizeBestVariant(worker, canvas)).trim();
+          } finally {
+            canvas.width = 0;
+            canvas.height = 0;
+          }
         }
         if (text) results.push('--- Página ' + pageNumber + ' ---\n' + text);
         page.cleanup();

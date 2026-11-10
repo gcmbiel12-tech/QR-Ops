@@ -36,7 +36,7 @@ void main() {
               initialImageBytes: imageBytes,
               recognizeImage: (bytes) async {
                 recognitions++;
-                return 'Texto de teste';
+                return 'Era um dia de domingo, lindo e\nensolarado,\ncom muitos pássaros\nvoando no céu do Rio Grande do\nNorte.\n\nJoão e seu filho Diego, saíram para\npescar como sempre faziam.';
               },
               onRecordSaved: () => savedCallbacks++,
             ),
@@ -71,7 +71,10 @@ void main() {
       expect(repository.records, hasLength(1));
       expect(repository.records.single.operation, QrRecordOperation.ocr);
       expect(repository.records.single.name, 'Nota de teste');
-      expect(repository.records.single.content, 'Texto de teste');
+      expect(
+        repository.records.single.content,
+        'Era um dia de domingo, lindo e ensolarado, com muitos pássaros voando no céu do Rio Grande do Norte.\n\nJoão e seu filho Diego, saíram para pescar como sempre faziam.',
+      );
       expect(savedCallbacks, 1);
     },
   );

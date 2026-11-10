@@ -12,6 +12,7 @@ import '../../domain/qr_record.dart';
 import '../../domain/qr_record_repository.dart';
 import 'ocr_engine.dart';
 import 'ocr_pdf_engine.dart';
+import 'ocr_text_formatter.dart';
 
 class QrOcrPage extends StatefulWidget {
   const QrOcrPage({
@@ -139,9 +140,13 @@ class _QrOcrPageState extends State<QrOcrPage> {
     });
     try {
       final recognize = widget.recognizeImage ?? recognizeImageText;
-      final recognized = pdfBytes != null
+      final rawRecognized = pdfBytes != null
           ? await _recognizePdf(pdfBytes)
           : await recognize(bytes!);
+      final recognized = formatRecognizedOcrText(rawRecognized);
+      final warnings = widget.recognizeImage == null
+          ? await getLastOcrWarnings()
+          : const <String>[];
       if (!mounted) return;
       final trimmed = recognized.trim();
       final shouldAppend =
@@ -158,7 +163,9 @@ class _QrOcrPageState extends State<QrOcrPage> {
         _appendResult = false;
         _message = trimmed.isEmpty
             ? 'Nenhum texto reconhecido. Tente uma imagem mais nítida ou com melhor iluminação.'
-            : 'Revise e corrija o texto reconhecido antes de salvar ou exportar.';
+            : warnings.isEmpty
+            ? 'Revise e corrija o texto reconhecido antes de salvar ou exportar.'
+            : 'Confira possíveis trechos com baixa confiança: ${warnings.take(5).join(', ')}.';
       });
     } on UnsupportedError {
       if (mounted) {

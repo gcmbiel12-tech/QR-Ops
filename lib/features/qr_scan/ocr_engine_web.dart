@@ -5,6 +5,18 @@ import 'dart:typed_data';
 @JS('qrOpsRecognizeImage')
 external JSPromise<JSString> _recognizeImage(JSString imageDataUrl);
 
+@JS('qrOpsGetOcrWarnings')
+external JSString _getOcrWarnings();
+
+Future<List<String>> getLastOcrWarnings() async {
+  try {
+    final decoded = jsonDecode(_getOcrWarnings().toDart);
+    return decoded is List ? decoded.whereType<String>().toList() : const [];
+  } on Object {
+    return const [];
+  }
+}
+
 Future<String> recognizeImageText(Uint8List imageBytes) async {
   if (imageBytes.isEmpty) throw ArgumentError('A imagem está vazia.');
   final encoded = base64Encode(imageBytes);
