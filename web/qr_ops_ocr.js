@@ -17,14 +17,194 @@
     return loadPromise;
   }
 
+  function loadImageForOcr(imageDataUrl) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error('Não foi possível preparar a imagem para OCR.'));
+      image.src = imageDataUrl;
+    });
+  }
+
+  function createOcrVariants(image) {
+    const maxDimension = Math.max(image.naturalWidth, image.naturalHeight);
+    const scale = Math.min(2, 2600 / maxDimension);
+    const width = Math.max(1, Math.round(image.naturalWidth * scale));
+    const height = Math.max(1, Math.round(image.naturalHeight * scale));
+
+    const original = document.createElement('canvas');
+    original.width = width;
+    original.height = height;
+    const originalContext = original.getContext('2d', { willReadFrequently: true });
+    originalContext.imageSmoothingEnabled = true;
+    originalContext.imageSmoothingQuality = 'high';
+    originalContext.drawImage(image, 0, 0, width, height);
+
+    const source = originalContext.getImageData(0, 0, width, height);
+    const pixelCount = width * height;
+    const gray = new Uint8Array(pixelCount);
+    const histogram = new Uint32Array(256);
+
+    for (let i = 0; i < pixelCount; i++) {
+      const offset = i * 4;
+      const value = Math.round(
+        0.299 * source.data[offset] +
+        0.587 * source.data[offset + 1] +
+        0.114 * source.data[offset + 2]
+      );
+      gray[i] = value;
+      histogram[value]++;
+    }
+
+    function percentile(target) {
+      const limit = Math.ceil(pixelCount * target);
+      let total = 0;
+      for (let value = 0; value < histogram.length; value++) {
+        total += histogram[value];
+        if (total >= limit) return value;
+      }
+      return 255;
+    }
+
+    const low = percentile(0.02);
+    const high = percentile(0.98);
+    const range = Math.max(1, high - low);
+    const enhancedGray = new Uint8Array(pixelCount);
+
+    for (let i = 0; i < pixelCount; i++) {
+      enhancedGray[i] = Math.max(
+        0,
+        Math.min(255, Math.round((gray[i] - low) * 255 / range))
+      );
+    }
+
+    const enhanced = document.createElement('canvas');
+    enhanced.width = width;
+    enhanced.height = height;
+    const enhancedContext = enhanced.getContext('2d', { willReadFrequently: true });
+    const enhancedData = enhancedContext.createImageData(width, height);
+
+    for (let i = 0; i < pixelCount; i++) {
+      const value = enhancedGray[i];
+      const offset = i * 4;
+      enhancedData.data[offset] = value;
+      enhancedData.data[offset + 1] = value;
+      enhancedData.data[offset + 2] = value;
+      enhancedData.data[offset + 3] = 255;
+    }
+    enhancedContext.putImageData(enhancedData, 0, 0);
+
+    // Adaptive thresholding compensates for shadows and uneven lighting.
+    // An integral image keeps the local-mean calculation linear in pixel count.
+    const stride = width + 1;
+    const integral = new Uint32Array(stride * (height + 1));
+    for (let y = 0; y < height; y++) {
+      let rowSum = 0;
+      for (let x = 0; x < width; x++) {
+        rowSum += enhancedGray[y * width + x];
+        integral[(y + 1) * stride + x + 1] =
+          integral[y * stride + x + 1] + rowSum;
+      }
+    }
+
+    const adaptive = document.createElement('canvas');
+    adaptive.width = width;
+    adaptive.height = height;
+    const adaptiveContext = adaptive.getContext('2d', { willReadFrequently: true });
+    const adaptiveData = adaptiveContext.createImageData(width, height);
+    const radius = 16;
+
+    for (let y = 0; y < height; y++) {
+      const top = Math.max(0, y - radius);
+      const bottom = Math.min(height - 1, y + radius);
+      for (let x = 0; x < width; x++) {
+        const left = Math.max(0, x - radius);
+        const right = Math.min(width - 1, x + radius);
+        const area = (right - left + 1) * (bottom - top + 1);
+        const sum =
+          integral[(bottom + 1) * stride + right + 1] -
+          integral[top * stride + right + 1] -
+          integral[(bottom + 1) * stride + left] +
+          integral[top * stride + left];
+        const localThreshold = sum / area - 10;
+        const value = enhancedGray[y * width + x] < localThreshold ? 0 : 255;
+        const offset = (y * width + x) * 4;
+        adaptiveData.data[offset] = value;
+        adaptiveData.data[offset + 1] = value;
+        adaptiveData.data[offset + 2] = value;
+        adaptiveData.data[offset + 3] = 255;
+      }
+    }
+    adaptiveContext.putImageData(adaptiveData, 0, 0);
+
+    return [
+      { canvas: original, pageSegmentation: '3' },
+      { canvas: enhanced, pageSegmentation: '6' },
+      { canvas: adaptive, pageSegmentation: '6' },
+      { canvas: enhanced, pageSegmentation: '11' }
+    ];
+  }
+
+  function scoreOcrResult(data) {
+    const text = (data.text || '').trim();
+    if (!text) return -1;
+
+    const words = (data.words || []).filter(word =>
+      word.text && Number.isFinite(word.confidence)
+    );
+    let confidence = Number(data.confidence) || 0;
+    if (words.length) {
+      let weightedTotal = 0;
+      let totalCharacters = 0;
+      for (const word of words) {
+        const weight = Math.max(1, word.text.trim().length);
+        weightedTotal += word.confidence * weight;
+        totalCharacters += weight;
+      }
+      confidence = weightedTotal / totalCharacters;
+    }
+
+    const readableCharacters = (text.match(/[\p{L}\p{N}]/gu) || []).length;
+    const completenessBonus = Math.min(10, Math.log2(readableCharacters + 1) * 1.5);
+    return confidence + completenessBonus;
+  }
+
   window.qrOpsRecognizeImage = async function (imageDataUrl) {
     const tesseract = await loadTesseract();
-    const worker = await tesseract.createWorker('por');
+    const image = await loadImageForOcr(imageDataUrl);
+    let variants = [];
+    let worker;
+    let bestText = '';
+    let bestScore = -1;
+
     try {
-      const result = await worker.recognize(imageDataUrl);
-      return result.data.text || '';
+      variants = createOcrVariants(image);
+      worker = await tesseract.createWorker('por');
+
+      for (const variant of variants) {
+        await worker.setParameters({
+          tessedit_pageseg_mode: variant.pageSegmentation,
+          preserve_interword_spaces: '1',
+          user_defined_dpi: '300'
+        });
+        const result = await worker.recognize(variant.canvas);
+        const score = scoreOcrResult(result.data);
+        if (score > bestScore) {
+          bestScore = score;
+          bestText = result.data.text || '';
+        }
+      }
+      return bestText;
     } finally {
-      await worker.terminate();
+      try {
+        if (worker) await worker.terminate();
+      } finally {
+        for (const canvas of new Set(variants.map(variant => variant.canvas))) {
+          canvas.width = 0;
+          canvas.height = 0;
+        }
+        image.src = '';
+      }
     }
   };
 

@@ -52,7 +52,7 @@ class _QrOcrPageState extends State<QrOcrPage> {
 
   Future<void> _pickImage(ImageSource source) async {
     try {
-      final image = await _picker.pickImage(source: source, imageQuality: 95);
+      final image = await _picker.pickImage(source: source);
       if (image == null || !mounted) return;
       final bytes = await image.readAsBytes();
       if (bytes.isEmpty) {
